@@ -4,7 +4,8 @@
 #include "../../Engine/Keys.h"
 #include "../../Engine/SceneManager.hpp"
 
-#include "../Resources/Configuration.hpp"
+#include "../../Engine/Configuration.hpp"
+#include "../Data/Util/Util.hpp"
 #include "../Data/MusicDatabase.h"
 #include "../Data/OJN.h"
 
@@ -18,7 +19,7 @@ IntroScene::IntroScene() {
 
 void IntroScene::Render(double delta) {
 	m_text->Position = UDim2::fromOffset(5, 5);
-	m_text->Draw("Unnamed O2 Clone (Beta 3)");
+	m_text->Draw("Unnamed O2 Clone (Beta 5)");
 
 	m_text->Position = UDim2::fromOffset(5, 15);
 	if (IsReady) {
@@ -33,34 +34,35 @@ void IntroScene::Render(double delta) {
 
 			m_text->Draw("Processing file: " + path.string());
 
-			if (waitFrame > 0.05) {
-				std::fstream fs(path, std::ios::in | std::ios::binary);
+			if (waitFrame > 0.025) {
+				auto fs = O2::OJN::LoadOJNFile(path);
 				OJNHeader Header = {};
 				fs.read((char*)&Header, sizeof(OJNHeader));
 
 				DB_MusicItem item = {};
 				item.Id = Header.songid;
-				memcpy(&item.Title, &Header.title, sizeof(item.Title));
-				memcpy(&item.Artist, &Header.artist, sizeof(item.Artist));
-				memcpy(&item.Noter, &Header.noter, sizeof(item.Noter));
-				memcpy(&item.Difficulty, &Header.level, sizeof(item.Difficulty));
-				memcpy(&item.MaxNotes, &Header.note_count, sizeof(item.MaxNotes));
 				
+				auto title = CodepageToUtf8((const char*)Header.title, sizeof(Header.title), 949);
+				auto noter = CodepageToUtf8((const char*)Header.noter, sizeof(Header.noter), 949);
+				auto artist = CodepageToUtf8((const char*)Header.artist, sizeof(Header.artist), 949);
+				
+				memcpy(item.Title, title.c_str(), std::clamp((int)title.size(), 0, (int)(sizeof(item.Title) - 1)));
+				memcpy(item.Noter, noter.c_str(), std::clamp((int)noter.size(), 0, (int)(sizeof(item.Noter) - 1)));
+				memcpy(item.Artist, artist.c_str(), std::clamp((int)artist.size(), 0, (int)(sizeof(item.Artist) - 1)));
+
 				item.CoverOffset = Header.data_offset[3];
 				item.CoverSize = Header.cover_size; 
 				item.ThumbnailSize = Header.bmp_size;
 
 				db->Insert(nextIndex++, item);
-				fs.close();
 
 				waitFrame = 0;
 			}
 		}
 		else {
 			std::filesystem::path musicPath = Configuration::Load("Music", "Folder");
-			std::string dbName = Configuration::Load("Music", "Database");
 
-			db->Save(std::filesystem::current_path() / dbName);
+			db->Save(std::filesystem::current_path() / "Game.db");
 			IsReady = true;
 		}
 	}
@@ -73,19 +75,24 @@ void IntroScene::OnKeyDown(const KeyState& state) {
 }
 
 bool IntroScene::Attach() {
-	m_text = new Text("Arial", 13);
+	m_text = new Text(13);
 
 	std::filesystem::path musicPath = Configuration::Load("Music", "Folder");
-	std::string dbName = Configuration::Load("Music", "Database");
 
 	auto db = MusicDatabase::GetInstance();
-	std::filesystem::path dbPath = std::filesystem::current_path() / dbName;
+	std::filesystem::path dbPath = std::filesystem::current_path() / "Game.db";
 	if (std::filesystem::exists(dbPath)) {
-		db->Load(dbPath);
+		try {
+			db->Load(dbPath);
 
-		IsReady = true;
+			IsReady = true;
+		}
+		catch (std::runtime_error) {
+			goto prepare_db;
+		}
 	}
 	else {
+		prepare_db:
 		for (const auto& dir_entry : std::filesystem::recursive_directory_iterator(musicPath)) {
 			if (dir_entry.is_regular_file()) {
 				std::string fileName = dir_entry.path().filename().string();

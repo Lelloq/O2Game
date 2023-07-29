@@ -23,6 +23,13 @@ struct NoteInfo {
 	NoteType Type;
 	uint32_t LaneIndex;
 	uint32_t Keysound;
+
+	float Volume = 1, Pan = 0;
+};
+
+struct BMSMeasureInfo {
+	int Measure;
+	int CellSize;
 };
 
 struct TimingInfo {
@@ -44,11 +51,14 @@ struct Sample {
 struct AutoSample {
 	uint32_t StartTime;
 	uint32_t Index;
+
+	float Volume = 1, Pan = 0;
 };
 
 enum class Mod {
 	MIRROR,
-	RANDOM
+	RANDOM,
+	REARRANGE
 };
 
 class Chart {
@@ -59,7 +69,7 @@ public:
 	Chart(O2::OJN& ojnfile, int diffIndex = 2);
 	~Chart();
 
-	void ApplyMod(Mod mod);
+	void ApplyMod(Mod mod, void* data = NULL);
 
 	float InitialSvMultiplier;
 	int m_keyCount;
@@ -70,9 +80,9 @@ public:
 
 	std::string m_backgroundFile;
 	std::vector<char> m_backgroundBuffer;
-	std::string m_title;
+	std::u8string m_title;
+	std::u8string m_artist;
 	std::string m_audio;
-	std::string m_artist;
 	std::filesystem::path m_beatmapDirectory;
 
 	std::vector<NoteInfo> m_notes;

@@ -2,6 +2,8 @@
 #include "framework.h"
 #include <string>
 #include <filesystem>
+#include "Data/WindowsTypes.hpp"
+#include <mutex>
 
 enum class AudioType {
 	STREAM,
@@ -22,6 +24,12 @@ public:
 	bool Resume();
 	bool Stop();
 	bool IsPlaying();
+	bool IsFadeOut();
+
+	bool FadeIn();
+	bool FadeOut();
+
+	void Update();
 
 	void SetVolume(int vol);
 	void SetPan(int pan);
@@ -46,6 +54,12 @@ protected:
 	int pan = 0;
 	float rate = 1.0f;
 	bool pitch = false;
+	bool is_fade_rn = false;
+	
+	std::mutex* lockFade;
+	UINT32 fadeState = -1;
+	DWORD fadeStartTime = -1;
+	DWORD fadeEndTime = -1;
 
 	DWORD m_hStream;
 };

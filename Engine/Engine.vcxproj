@@ -25,13 +25,19 @@
     <ClCompile Include="AudioSampleChannel.cpp" />
     <ClCompile Include="BassFXSampleEncoding.cpp" />
     <ClCompile Include="Color3.cpp" />
+    <ClCompile Include="Configuration.cpp" />
     <ClCompile Include="Data\estring.cpp" />
+    <ClCompile Include="Imgui\imgui_impl_sdlrenderer2.cpp" />
+    <ClCompile Include="Imgui\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="Imgui\implot.cpp" />
+    <ClCompile Include="Imgui\implot_demo.cpp" />
+    <ClCompile Include="Imgui\implot_items.cpp" />
+    <ClCompile Include="ResizableImage.cpp" />
     <ClCompile Include="FontResources.cpp" />
     <ClCompile Include="Imgui\imgui.cpp" />
     <ClCompile Include="Imgui\ImguiUtil.cpp" />
     <ClCompile Include="Imgui\imgui_demo.cpp" />
     <ClCompile Include="Imgui\imgui_draw.cpp" />
-    <ClCompile Include="Imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="Imgui\imgui_impl_sdl2.cpp" />
     <ClCompile Include="Imgui\imgui_tables.cpp" />
     <ClCompile Include="Imgui\imgui_widgets.cpp" />
@@ -45,13 +51,20 @@
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="SceneManager.cpp" />
+    <ClCompile Include="SDLException.cpp" />
     <ClCompile Include="Sprite2D.cpp" />
     <ClCompile Include="Text.cpp" />
     <ClCompile Include="Texture2D.cpp" />
-    <ClCompile Include="Tile2D.cpp" />
+    <ClCompile Include="Threading\GameThread.cpp" />
     <ClCompile Include="UDim.cpp" />
     <ClCompile Include="UDim2.cpp" />
     <ClCompile Include="Vector2.cpp" />
+    <ClCompile Include="VulkanDriver\Texture2DVulkan.cpp" />
+    <ClCompile Include="VulkanDriver\VkBootstrap\VkBootstrap.cpp" />
+    <ClCompile Include="VulkanDriver\vkinit.cpp" />
+    <ClCompile Include="VulkanDriver\vk_mem_alloc\Common.cpp" />
+    <ClCompile Include="VulkanDriver\vk_mem_alloc\VmaUsage.cpp" />
+    <ClCompile Include="VulkanDriver\VulkanEngine.cpp" />
     <ClCompile Include="Win32ErrorHandling.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
@@ -62,12 +75,22 @@
     <ClInclude Include="AudioSampleChannel.hpp" />
     <ClInclude Include="BassFXSampleEncoding.hpp" />
     <ClInclude Include="Color3.hpp" />
+    <ClInclude Include="Configuration.hpp" />
+    <ClInclude Include="Data\stb_image.h" />
+    <ClInclude Include="Data\WindowsTypes.hpp" />
+    <ClInclude Include="Data\SDLRenderStruct.h" />
+    <ClInclude Include="FallbackFonts\jp.ttf.h" />
+    <ClInclude Include="Imgui\imgui_impl_sdlrenderer2.h" />
+    <ClInclude Include="Imgui\imgui_impl_vulkan.h" />
+    <ClInclude Include="Imgui\implot.h" />
+    <ClInclude Include="Imgui\implot_internal.h" />
+    <ClInclude Include="Data\mINI.h" />
+    <ClInclude Include="ResizableImage.hpp" />
     <ClInclude Include="FallbackFonts\arial.ttf.h" />
     <ClInclude Include="FontResources.hpp" />
     <ClInclude Include="Imgui\imconfig.h" />
     <ClInclude Include="Imgui\imgui.h" />
     <ClInclude Include="Imgui\ImguiUtil.hpp" />
-    <ClInclude Include="Imgui\imgui_impl_dx11.h" />
     <ClInclude Include="Imgui\imgui_impl_sdl2.h" />
     <ClInclude Include="Imgui\imgui_internal.h" />
     <ClInclude Include="Imgui\imstb_rectpack.h" />
@@ -75,8 +98,19 @@
     <ClInclude Include="Imgui\imstb_truetype.h" />
     <ClInclude Include="Imgui\misc\freetype\imgui_freetype.h" />
     <ClInclude Include="MsgBox.hpp" />
+    <ClInclude Include="SDLException.hpp" />
     <ClInclude Include="Sprite2D.hpp" />
     <ClInclude Include="Text.hpp" />
+    <ClInclude Include="Threading\GameThread.hpp" />
+    <ClInclude Include="VulkanDriver\Texture2DVulkan.h" />
+    <ClInclude Include="VulkanDriver\Texture2DVulkan_Internal.h" />
+    <ClInclude Include="VulkanDriver\VkBootstrap\VkBootstrap.h" />
+    <ClInclude Include="VulkanDriver\VkBootstrap\VkBootstrapDispatch.h" />
+    <ClInclude Include="VulkanDriver\vkinit.h" />
+    <ClInclude Include="VulkanDriver\vk_mem_alloc\Common.h" />
+    <ClInclude Include="VulkanDriver\vk_mem_alloc\vk_mem_alloc.h" />
+    <ClInclude Include="VulkanDriver\vk_mem_alloc\VmaUsage.h" />
+    <ClInclude Include="VulkanDriver\VulkanEngine.h" />
     <ClInclude Include="Win32ErrorHandling.h" />
     <ClInclude Include="Data\bass_ogg_silent.hpp" />
     <ClInclude Include="Data\estring.hpp" />
@@ -92,11 +126,13 @@
     <ClInclude Include="Scene.hpp" />
     <ClInclude Include="SceneManager.hpp" />
     <ClInclude Include="Texture2D.hpp" />
-    <ClInclude Include="Tile2D.hpp" />
     <ClInclude Include="UDim.hpp" />
     <ClInclude Include="UDim2.hpp" />
     <ClInclude Include="Vector2.hpp" />
     <ClInclude Include="Window.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
@@ -124,6 +160,7 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
@@ -131,6 +168,7 @@
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -200,8 +238,8 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)Lib\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/D _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING  %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(VULKAN_SDK)/include;$(SolutionDir)Lib\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/D _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING  /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -211,7 +249,7 @@
     </Link>
     <Lib>
       <AdditionalDependencies>$(SolutionDir)Lib\$(Platform)\$(Configuration)\bass.lib;$(SolutionDir)Lib\$(Platform)\$(Configuration)\bass_fx.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions></AdditionalOptions>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -226,8 +264,8 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)Lib\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/D _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING  %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(VULKAN_SDK)/include;$(SolutionDir)Lib\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/D _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING  /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
@@ -239,7 +277,7 @@
     </Link>
     <Lib>
       <AdditionalDependencies>$(SolutionDir)Lib\$(Platform)\$(Configuration)\bass.lib;$(SolutionDir)Lib\$(Platform)\$(Configuration)\bass_fx.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions></AdditionalOptions>
     </Lib>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

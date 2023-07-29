@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "../../Engine/EstEngine.hpp"
+#include "../../Engine/Data/WindowsTypes.hpp"
 #include "../Data/Chart.hpp"
 #include "../Data/AutoReplay.hpp"
 #include "GameTrack.hpp"
@@ -46,6 +47,7 @@ public:
 	double GetCurrentBPM() const;
 	double GetSongRate() const;
 	int GetAudioLength() const;
+	int GetGameVolume() const;
 
 	double GetPositionFromOffset(double offset);
 	double GetPositionFromOffset(double offset, int index);
@@ -57,14 +59,20 @@ public:
 	void SetLaneOffset(int offset);
 	int GetHitPosition() const;
 	Vector2 GetResolution() const;
-	RECT GetPlayRectangle() const;
-	std::string GetTitle() const;
+	Rect GetPlayRectangle() const;
+	std::u8string GetTitle() const;
 	
 	GameState GetState() const;
 	ScoreManager* GetScoreManager() const;
 	std::vector<double> GetTimingWindow();
 	std::vector<TimingInfo> GetBPMs() const;
 	std::vector<TimingInfo> GetSVs() const;
+
+	double GetElapsedTime() const;
+	int GetPlayTime() const;
+
+	int GetGuideLineIndex() const;
+	void SetGuideLineIndex(int idx);
 
 private:
 	void UpdateNotes();
@@ -90,10 +98,16 @@ private:
 	int m_audioLength = 0;
 	int m_hitPosition = 0;
 	int m_laneOffset = 0;
+	int m_audioVolume = 100;
+	int m_audioOffset = 0;
+
+	int m_guideLineIndex = 0;
 
 	bool m_started = false;
 	GameState m_state = GameState::NotGame;
-	RECT m_playRectangle;
+	std::u8string m_title;
+
+	Rect m_playRectangle;
 	int m_laneSize[7];
 	int m_lanePos[7];
 
@@ -108,6 +122,10 @@ private:
 	std::vector<AutoSample> m_autoSamples;
 	std::unordered_map<int, int> m_autoHitIndex;
 	std::unordered_map<int, std::vector<ReplayHitInfo>> m_autoHitInfos;
+
+	/* clock system */
+	int m_PlayTime;
+	std::chrono::system_clock::time_point m_startClock;
 
 	ScoreManager* m_scoreManager;
 	TimingLineManager* m_timingLineManager;

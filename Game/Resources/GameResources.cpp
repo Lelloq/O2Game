@@ -1,9 +1,13 @@
 #include "GameResources.hpp"
+#include "../../Engine/SDLException.hpp"
 #include "../../Engine/EstEngine.hpp"
 
+#include <SDL2/SDL_image.h>
 #include <filesystem>
 #include <fstream>
-#include <directxtk/WICTextureLoader.h>
+
+#include "../../Engine/Configuration.hpp"
+#include "SkinConfig.hpp"
 
 #pragma warning(disable:26451)
 
@@ -358,83 +362,255 @@ namespace GamePlayingResource {
 namespace GameNoteResource {
 	std::unordered_map<NoteImageType, NoteImage*> noteTextures;
 
-	bool Load() {
-		using namespace DirectX;
+	bool Load() {		
+		bool IsVulkan = Renderer::GetInstance()->IsVulkan();
 		
-		const char* textures[] = {
-			"mania-note1.png",
-			"mania-note2.png",
-			"mania-note3.png",
+		auto skinName = Configuration::Load("Game", "Skin");
+		auto skinPath = Configuration::Skin_GetPath(skinName);
+		auto skinNotePath = skinPath / "Notes";
+		SkinConfig conf(skinNotePath / "Notes.ini", 7);
 
-			"mania-hold1.png",
-			"mania-hold2.png",
-			"mania-hold3.png",
-		};
-		
-		for (int i = 0; i < 6; i++) {
-			std::filesystem::path path = std::filesystem::current_path() / "Skins" / "Default" / "Notes" / textures[i];
-			if (!std::filesystem::exists(path)) {
-				std::cout << "Missing: " << path << std::endl;
-
-				MessageBoxA(NULL, "Missing note texture!", "Error", MB_ICONERROR);
-				return false;
-			}
-			
-			ID3D11Device* device = Renderer::GetInstance()->GetDevice();
-			ID3D11DeviceContext* context = Renderer::GetInstance()->GetImmediateContext();
-
-			ID3D11ShaderResourceView* pTexture = nullptr;
-			ID3D11Resource* pResource;
-			HRESULT hr = CreateWICTextureFromFileEx(
-				device,
-				path.wstring().c_str(),
-				0,
-				D3D11_USAGE_DEFAULT,
-				D3D11_BIND_SHADER_RESOURCE,
-				0,
-				0,
-				WIC_LOADER_FORCE_RGBA32 | WIC_LOADER_IGNORE_SRGB,
-				&pResource,
-				&pTexture
-			);
-
-			if (FAILED(hr)) {
-				MessageBoxA(NULL, "Failed to load note texture!", "Error", MB_ICONERROR);
-				return false;
-			}
-			
-			// query interface
-			ID3D11Texture2D* texture = nullptr;
-			hr = pResource->QueryInterface<ID3D11Texture2D>(&texture);
-
-			if (FAILED(hr)) {
-				MessageBoxA(NULL, "Failed to load note texture!", "Error", MB_ICONERROR);
-				return false;
-			}
-
-			// get image size
-			D3D11_TEXTURE2D_DESC desc;
-			texture->GetDesc(&desc);
+		for (int i = 0; i < 7; i++) {
+			NoteValue& note = conf.GetNote("LaneHit" + std::to_string(i));
+			NoteValue& hold = conf.GetNote("LaneHold" + std::to_string(i));
 
 			NoteImage* noteImage = new NoteImage();
-			noteImage->Texture = pTexture;
-			noteImage->TextureRect = { 0, 0, (LONG)desc.Width, (LONG)desc.Height };
+			NoteImage* holdImage = new NoteImage();
+
+			noteImage->Surface.resize(note.numOfFiles);
+			holdImage->Surface.resize(hold.numOfFiles);
+
+			noteImage->Texture.resize(note.numOfFiles);
+			holdImage->Texture.resize(hold.numOfFiles);
+
+			noteImage->VulkanTexture.resize(note.numOfFiles);
+			holdImage->VulkanTexture.resize(hold.numOfFiles);
+
+			for (int j = 0; j < note.numOfFiles; j++) {
+				auto path = skinNotePath / (note.fileName + std::to_string(j) + ".png");
+				if (!std::filesystem::exists(path)) {
+					throw std::runtime_error("File: " + path.string() + " is not found!");
+				}
+
+				if (IsVulkan) {
+					auto tex_data = vkTexture::TexLoadImage(path);
+					if (tex_data == nullptr) {
+						throw std::runtime_error("Failed to load image: " + path.string() + "!");
+					}
+
+					noteImage->VulkanTexture[j] = tex_data;
+
+					if (j == 0) {
+						auto& rect = noteImage->TextureRect;
+						rect.left = 0;
+						rect.top = 0;
+						
+						vkTexture::QueryTexture(tex_data, rect.right, rect.bottom);
+					}
+				}
+				else {
+					noteImage->Surface[j] = IMG_Load(path.string().c_str());
+					if (noteImage->Surface[j] == nullptr) {
+						throw std::runtime_error("Failed to load image: " + path.string() + "!");
+					}
+
+					noteImage->Texture[j] = SDL_CreateTextureFromSurface(Renderer::GetInstance()->GetSDLRenderer(), noteImage->Surface[j]);
+					if (noteImage->Texture[j] == nullptr) {
+						throw std::runtime_error("Failed to create texture from image: " + path.string() + "!");
+					}
+
+					if (j == 0) {
+						// query texture size
+						auto& rect = noteImage->TextureRect;
+						rect.left = 0;
+						rect.top = 0;
+
+						SDL_QueryTexture(noteImage->Texture[j], NULL, NULL, (int*)&rect.right, (int*)&rect.bottom);
+					}
+				}
+			}
+
+			for (int j = 0; j < hold.numOfFiles; j++) {
+				auto path = skinNotePath / (hold.fileName + std::to_string(j) + ".png");
+				if (!std::filesystem::exists(path)) {
+					throw std::runtime_error("File: " + path.string() + " is not found!");
+				}
+
+				if (IsVulkan) {
+					auto tex_data = vkTexture::TexLoadImage(path);
+					if (tex_data == nullptr) {
+						throw std::runtime_error("Failed to load image: " + path.string() + "!");
+					}
+
+					holdImage->VulkanTexture[j] = tex_data;
+
+					if (j == 0) {
+						auto& rect = holdImage->TextureRect;
+						rect.left = 0;
+						rect.top = 0;
+
+						vkTexture::QueryTexture(tex_data, rect.right, rect.bottom);
+					}
+				}
+				else {
+					holdImage->Surface[j] = IMG_Load((const char*)path.u8string().c_str());
+					if (holdImage->Surface[j] == nullptr) {
+						throw std::runtime_error("Failed to load image: " + path.string() + "!");
+					}
+
+					holdImage->Texture[j] = SDL_CreateTextureFromSurface(Renderer::GetInstance()->GetSDLRenderer(), holdImage->Surface[j]);
+					if (holdImage->Texture[j] == nullptr) {
+						throw std::runtime_error("Failed to create texture from image: " + path.string() + "!");
+					}
+
+					if (j == 0) {
+						// query texture size
+						auto& rect = holdImage->TextureRect;
+						rect.left = 0;
+						rect.top = 0;
+
+						SDL_QueryTexture(holdImage->Texture[j], NULL, NULL, (int*)&rect.right, (int*)&rect.bottom);
+					}
+				}
+			}
 
 			noteTextures[(NoteImageType)i] = noteImage;
-
-			texture->Release();
-			pResource->Release();
+			noteTextures[(NoteImageType)(i + 7)] = holdImage;
 		}
+
+		NoteValue& trailUp = conf.GetNote("NoteTrailUp");
+		NoteValue& trailDown = conf.GetNote("NoteTrailDown");
+		
+		NoteImage* trailUpImg = new NoteImage();
+		trailUpImg->Texture.resize(trailUp.numOfFiles);
+		trailUpImg->Surface.resize(trailUp.numOfFiles);
+		trailUpImg->VulkanTexture.resize(trailUp.numOfFiles);
+
+		NoteImage* trailDownImg = new NoteImage();
+		trailDownImg->Texture.resize(trailDown.numOfFiles);
+		trailDownImg->Surface.resize(trailDown.numOfFiles);
+		trailDownImg->VulkanTexture.resize(trailUp.numOfFiles);
+
+		for (int i = 0; i < trailUp.numOfFiles; i++) {
+			auto path = skinNotePath / (trailUp.fileName + std::to_string(i) + ".png");
+			if (!std::filesystem::exists(path)) {
+				throw std::runtime_error("File: " + path.string() + " is not found!");
+			}
+
+			if (IsVulkan) {
+				auto tex_data = vkTexture::TexLoadImage(path);
+				if (tex_data == nullptr) {
+					throw std::runtime_error("Failed to load image: " + path.string() + "!");
+				}
+
+				trailUpImg->VulkanTexture[i] = tex_data;
+
+				if (i == 0) {
+					auto& rect = trailUpImg->TextureRect;
+					rect.left = 0;
+					rect.top = 0;
+
+					vkTexture::QueryTexture(tex_data, rect.right, rect.bottom);
+				}
+			}
+			else {
+				trailUpImg->Surface[i] = IMG_Load((const char*)path.u8string().c_str());
+				if (trailUpImg->Surface[i] == nullptr) {
+					throw std::runtime_error("Failed to load image: " + path.string() + "!");
+				}
+
+				trailUpImg->Texture[i] = SDL_CreateTextureFromSurface(Renderer::GetInstance()->GetSDLRenderer(), trailUpImg->Surface[i]);
+				if (trailUpImg->Texture[i] == nullptr) {
+					throw std::runtime_error("Failed to create texture from image: " + path.string() + "!");
+				}
+
+				if (i == 0) {
+					// query texture size
+					auto& rect = trailUpImg->TextureRect;
+					rect.left = 0;
+					rect.top = 0;
+
+					SDL_QueryTexture(trailUpImg->Texture[i], NULL, NULL, (int*)&rect.right, (int*)&rect.bottom);
+				}
+			}
+		}
+
+		for (int i = 0; i < trailDown.numOfFiles; i++) {
+			auto path = skinNotePath / (trailDown.fileName + std::to_string(i) + ".png");
+			if (!std::filesystem::exists(path)) {
+				throw std::runtime_error("File: " + path.string() + " is not found!");
+			}
+
+			if (IsVulkan) {
+				auto tex_data = vkTexture::TexLoadImage(path);
+				if (tex_data == nullptr) {
+					throw std::runtime_error("Failed to load image: " + path.string() + "!");
+				}
+
+				trailDownImg->VulkanTexture[i] = tex_data;
+
+				if (i == 0) {
+					auto& rect = trailDownImg->TextureRect;
+					rect.left = 0;
+					rect.top = 0;
+
+					vkTexture::QueryTexture(tex_data, rect.right, rect.bottom);
+				}
+			}
+			else {
+				trailDownImg->Surface[i] = IMG_Load((const char*)path.u8string().c_str());
+				if (trailDownImg->Surface[i] == nullptr) {
+					throw std::runtime_error("Failed to load image: " + path.string() + "!");
+				}
+
+				trailDownImg->Texture[i] = SDL_CreateTextureFromSurface(Renderer::GetInstance()->GetSDLRenderer(), trailDownImg->Surface[i]);
+				if (trailDownImg->Texture[i] == nullptr) {
+					throw std::runtime_error("Failed to create texture from image: " + path.string() + "!");
+				}
+
+				if (i == 0) {
+					// query texture size
+					auto& rect = trailDownImg->TextureRect;
+					rect.left = 0;
+					rect.top = 0;
+
+					SDL_QueryTexture(trailDownImg->Texture[i], NULL, NULL, (int*)&rect.right, (int*)&rect.bottom);
+				}
+			}
+		}
+
+		noteTextures[NoteImageType::TRAIL_UP] = trailUpImg;
+		noteTextures[NoteImageType::TRAIL_DOWN] = trailDownImg;
 		
 		return true;
 	}
 
 	bool Dispose() {
+		bool IsVulkan = Renderer::GetInstance()->IsVulkan();
+
 		for (auto& it : noteTextures) {
-			it.second->Texture->Release();
+			if (IsVulkan) {
+				for (auto& tex : it.second->VulkanTexture) {
+					vkTexture::ReleaseTexture(tex);
+					tex = nullptr;
+				}
+			}
+			else {
+				for (auto& tex : it.second->Texture) {
+					SDL_DestroyTexture(tex);
+					tex = nullptr;
+				}
+
+				for (auto& sur : it.second->Surface) {
+					SDL_FreeSurface(sur);
+					sur = nullptr;
+				}
+			}
+
 			delete it.second;
 		}
 
+		noteTextures.clear();
 		return true;
 	}
 

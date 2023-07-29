@@ -1,18 +1,28 @@
 #include "MathUtils.hpp"
+#include "Window.hpp"
 
-bool MathUtil::ClipRect(const RECT& rect, RECT& clip) {
-	if (clip.left < rect.left) {
-		clip.left = rect.left;
-	}
-	if (clip.right > rect.right) {
-		clip.right = rect.right;
-	}
-	if (clip.top < rect.top) {
-		clip.top = rect.top;
-	}
-	if (clip.bottom > rect.bottom) {
-		clip.bottom = rect.bottom;
+ImVec2 MathUtil::ScaleVec2(ImVec2 input) {
+	Window* wnd = Window::GetInstance();
+	if (wnd->IsScaleOutput()) {
+		input.x *= wnd->GetWidthScale();
+		input.y *= wnd->GetHeightScale();
 	}
 
-	return true;
+	return input;
+}
+
+ImVec2 MathUtil::ScaleVec2(double x, double y) {
+	ImVec2 input((float)x, (float)y);
+
+	Window* wnd = Window::GetInstance();
+	if (wnd->IsScaleOutput()) {
+		input.x *= wnd->GetWidthScale();
+		input.y *= wnd->GetHeightScale();
+	}
+
+	return input;
+}
+
+double MathUtil::Lerp(double min, double max, double alpha) {
+	return min * (1.0 - alpha) + (max * alpha);
 }

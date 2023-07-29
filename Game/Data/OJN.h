@@ -22,6 +22,12 @@ struct Package {
 	std::vector<Event> Events;
 };
 
+struct OJNMeasureInfo {
+	int Measure;
+	int EventCount;
+	double StartTime;
+};
+
 struct BPMChange {
 	float BPM;
 	double Measure;
@@ -42,6 +48,10 @@ struct NoteEvent {
 	float Value;
 	int Channel;
 	NoteEventType Type;
+
+	int CellSize;
+
+	float Volume, Pan;
 };
 
 struct OJNHeader {
@@ -72,6 +82,8 @@ struct OJNHeader {
 struct O2Timing {
 	double BPM;
 	double Time;
+
+	float Position;
 };
 
 struct O2Note {
@@ -81,15 +93,23 @@ struct O2Note {
 	bool IsLN;
 	int LaneIndex;
 	int SampleRefId;
+
+	int Channel;
+	float Position = -1;
+	float EndPosition = -1;
+
+	float Volume, Pan;
 };
 
 struct OJNDifficulty {
 	std::vector<O2Note> Notes;
 	std::vector<O2Note> AutoSamples;
 	std::vector<O2Timing> Timings;
+	std::vector<O2Timing> MeasureLenghts;
 	std::vector<O2Sample> Samples;
 	std::vector<double> Measures;
 
+	bool Valid = false;
 	double AudioLength = 0;
 };
 
@@ -99,10 +119,12 @@ namespace O2 {
 		OJN();
 		~OJN();
 
+		static std::stringstream LoadOJNFile(std::filesystem::path filePath);
 		void Load(std::filesystem::path& filePath);
 
 		std::filesystem::path CurrrentDir;
 		OJNHeader Header;
+		int KeyCount;
 
 		bool IsValid();
 

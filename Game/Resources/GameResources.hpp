@@ -2,7 +2,9 @@
 
 #include <iostream>
 #include <unordered_map>
-#include <d3d11.h>
+#include <SDL2/SDL.h>
+#include "../../Engine/VulkanDriver/Texture2DVulkan.h"
+#include "../../Engine/Data/WindowsTypes.hpp"
 
 typedef void* ESTHANDLE;
 
@@ -44,18 +46,32 @@ struct OPIFile {
 };
 
 enum class NoteImageType {
-	WHITE,
-	BLUE,
-	YELLOW,
+	LANE_1,
+	LANE_2,
+	LANE_3,
+	LANE_4,
+	LANE_5,
+	LANE_6,
+	LANE_7,
 
-	HOLD_WHITE,
-	HOLD_BLUE,
-	HOLD_YELLOW,
+	HOLD_LANE_1,
+	HOLD_LANE_2,
+	HOLD_LANE_3,
+	HOLD_LANE_4,
+	HOLD_LANE_5,
+	HOLD_LANE_6,
+	HOLD_LANE_7,
+
+	TRAIL_UP,
+	TRAIL_DOWN,
 };
 
 struct NoteImage {
-	ID3D11ShaderResourceView* Texture;
-	RECT TextureRect;
+	std::vector<SDL_Texture*> Texture;
+	std::vector<SDL_Surface*> Surface;
+
+	std::vector<Texture2D_Vulkan*> VulkanTexture;
+	Rect TextureRect;
 };
 
 namespace GameInterfaceResource {

@@ -3,26 +3,37 @@
 #include <fstream>
 #include <iostream>
 
-#include <directxtk/WICTextureLoader.h>
 #include "Renderer.hpp"
 #include "MathUtils.hpp"
 #include "Win32ErrorHandling.h"
-
-#define SAFE_RELEASE(p) { if ( (p) ) { (p)->Release(); (p) = 0; } }
-
-using namespace DirectX;
+#include "SDLException.hpp"
+#include <SDL2/SDL_image.h>
+#include <glm/glm.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include "VulkanDriver/VulkanEngine.h"
+#include "VulkanDriver/Texture2DVulkan_Internal.h"
+#include "Imgui/imgui_impl_vulkan.h"
 
 Texture2D::Texture2D() {
-	m_pTexture = nullptr;
 	TintColor = { 1.0f, 1.0f, 1.0f };
 
 	Rotation = 0;
 	Transparency = 0.0f;
-	m_actualSize = { 0, 0, 0, 0 };
-	m_bDisposeTexture = true;
+	AlphaBlend = false;
+
+	m_actualSize = {};
+	m_preAnchoredSize = {};
+	m_calculatedSize = {};
+
+	m_sdl_surface = nullptr;
+	m_sdl_tex = nullptr;
+
+	m_bDisposeTexture = false;
+
+	Size = UDim2::fromScale(1, 1);
 }
 
-Texture2D::Texture2D(std::string fileName) {
+Texture2D::Texture2D(std::string fileName) : Texture2D() {
 	if (!std::filesystem::exists(fileName)) {
 		fileName = std::filesystem::current_path().string() + fileName;
 	}
@@ -53,7 +64,7 @@ Texture2D::Texture2D(std::string fileName) {
 	LoadImageResources(buffer, size);
 }
 
-Texture2D::Texture2D(std::filesystem::path path) {
+Texture2D::Texture2D(std::filesystem::path path) : Texture2D() {
 	if (!std::filesystem::exists(path)) {
 		throw std::runtime_error(path.string() + " not found!");
 	}
@@ -80,7 +91,10 @@ Texture2D::Texture2D(std::filesystem::path path) {
 	LoadImageResources(buffer, size);
 }
 
-Texture2D::Texture2D(uint8_t* fileData, size_t size) {
+// Do base constructor called before derived constructor?
+// https://stackoverflow.com/questions/120547/what-are-the-rules-for-calling-the-superclass-constructor
+
+Texture2D::Texture2D(uint8_t* fileData, size_t size) : Texture2D() {
 	uint8_t* buffer = new uint8_t[size];
 	memcpy(buffer, fileData, size);
 
@@ -93,19 +107,41 @@ Texture2D::Texture2D(uint8_t* fileData, size_t size) {
 	LoadImageResources(buffer, size);
 }
 
-Texture2D::Texture2D(ID3D11ShaderResourceView* texture) {
-	m_pTexture = texture;
-
-	Rotation = 0;
-	Transparency = 0.0f;
-	m_actualSize = { 0, 0, 0, 0 };
+Texture2D::Texture2D(SDL_Texture* texture) : Texture2D() {
 	m_bDisposeTexture = false;
-	TintColor = { 1.0f, 1.0f, 1.0f };
+	m_sdl_tex = texture;
+
+	m_ready = true;
+}
+
+Texture2D::Texture2D(Texture2D_Vulkan* texture) : Texture2D() {
+	m_bDisposeTexture = false;
+	m_vk_tex = texture;
+
+	m_ready = true;
 }
 
 Texture2D::~Texture2D() {
 	if (m_bDisposeTexture) {
-		SAFE_RELEASE(m_pTexture)
+		if (m_vk_tex) {
+			auto vk_tex = m_vk_tex;
+
+			VulkanEngine::GetInstance()->_perFrameDeletionQueue.push_function([vk_tex] {
+				vkTexture::ReleaseTexture(vk_tex);
+			});
+
+			m_vk_tex = nullptr;
+		} else {
+			if (m_sdl_tex) {
+				SDL_DestroyTexture(m_sdl_tex);
+				m_sdl_tex = nullptr;
+			}
+
+			if (m_sdl_surface) {
+				SDL_FreeSurface(m_sdl_surface);
+				m_sdl_surface = nullptr;
+			}
+		}
 	}
 }
 
@@ -117,110 +153,221 @@ void Texture2D::Draw(bool manualDraw) {
 	Draw(nullptr, manualDraw);
 }
 
-void Texture2D::Draw(RECT* clipRect) {
+void Texture2D::Draw(Rect* clipRect) {
 	Draw(clipRect, true);
 }
 
-void Texture2D::Draw(RECT* clipRect, bool manualDraw) {
+void Texture2D::Draw(Rect* clipRect, bool manualDraw) {
 	Renderer* renderer = Renderer::GetInstance();
-	auto batch = m_pSpriteBatch != nullptr ? m_pSpriteBatch : renderer->GetSpriteBatch();
-	auto states = renderer->GetStates();
-	auto context = renderer->GetImmediateContext();
-	auto rasterizerState = renderer->GetRasterizerState();
-
+	auto window = Window::GetInstance();
+	bool scaleOutput = window->IsScaleOutput();
 	CalculateSize();
 
-	float scaleX = static_cast<float>(m_preAnchoredSize.right) / static_cast<float>(m_actualSize.right);
-	float scaleY = static_cast<float>(m_preAnchoredSize.bottom) / static_cast<float>(m_actualSize.bottom);
+	if (!m_ready) return;
 
-	if (manualDraw) {
-		batch->Begin(
-			SpriteSortMode_Immediate,
-			states->NonPremultiplied(),
-			states->PointWrap(),
-			nullptr,
-			clipRect ? rasterizerState : nullptr,
-			[&] {
-				if (clipRect) {
-					CD3D11_RECT rect(*clipRect);
-					context->RSSetScissorRects(1, &rect);
-				}
+	if (renderer->IsVulkan() && m_vk_tex) {
+		auto vulkan_driver = renderer->GetVulkanEngine();
+		auto cmd = vulkan_driver->get_current_frame()._mainCommandBuffer;
 
-				if (AlphaBlend) {
-					context->OMSetBlendState(renderer->GetBlendState(), nullptr, 0xffffffff);
-				}
+		VkRect2D scissor = {};
+		scissor.offset.x = 0;
+		scissor.offset.y = 0;
+		scissor.extent.width = window->GetWidth();
+		scissor.extent.height = window->GetHeight();
+
+		if (clipRect) {
+			scissor.offset.x = clipRect->left;
+			scissor.offset.y = clipRect->top;
+			scissor.extent.width = clipRect->right - clipRect->left;
+			scissor.extent.height = clipRect->bottom - clipRect->top;
+		}
+
+		VkDescriptorSet imageId = m_vk_tex->DS;
+
+		std::vector<ImDrawVert> vertexData(6);
+		float x1 = m_calculatedSizeF.left;
+		float y1 = m_calculatedSizeF.top;
+		float x2 = m_calculatedSizeF.left + m_calculatedSizeF.right;
+		float y2 = m_calculatedSizeF.top + m_calculatedSizeF.bottom;
+
+		if (scaleOutput) {
+			if (clipRect) {
+				scissor.offset.x = static_cast<int32_t>(clipRect->left * window->GetWidthScale());
+				scissor.offset.y = static_cast<int32_t>(clipRect->top * window->GetHeightScale());
+				scissor.extent.width = static_cast<int32_t>((clipRect->right - clipRect->left) * window->GetWidthScale());
+				scissor.extent.height = static_cast<int32_t>((clipRect->bottom - clipRect->top) * window->GetHeightScale());
 			}
-		);
-	}
 
-	XMVECTOR position = { (float)m_calculatedSize.left, (float)m_calculatedSize.top, 0, 0 };
-	XMVECTOR origin = { 0.5, 0.5, 0, 0 };
-	XMVECTOR scale = { scaleX, scaleY, 1, 1 };
+			x1 *= window->GetWidthScale();
+			y1 *= window->GetHeightScale();
+			x2 *= window->GetWidthScale();
+			y2 *= window->GetHeightScale();
+		}
 
-	static const XMVECTORF32 s_half = { { { 0.5f, 0.5f, 0.f, 0.f } } };
-	position = XMVectorAdd(XMVectorTruncate(position), s_half);
-
-	try {
-		XMVECTORF32 color = { TintColor.R, TintColor.G, TintColor.B, 1.0f - Transparency };
-
-		batch->Draw(
-			m_pTexture,
-			position,
-			&m_actualSize,
-			color,
-			Rotation,
-			origin,
-			scale
-		);
-	}
-	catch (std::logic_error& error) {
-		if (error.what() == "Begin must be called before Draw") {
-			MessageBoxA(NULL, "Texture2D::Draw missing SpriteBatch::Begin", "EstEngine, Error", MB_ICONERROR);
+		if (x2 <= 0 || y2 <= 0) {
 			return;
 		}
-	}
 
-	if (manualDraw) {
-		batch->End();
+		ImVec2 uv1(0.0f, 0.0f);  // Top-left UV coordinate
+		ImVec2 uv2(1.0f, 0.0f);  // Top-right UV coordinate
+		ImVec2 uv3(1.0f, 1.0f);  // Bottom-right UV coordinate
+		ImVec2 uv4(0.0f, 1.0f);  // Bottom-left UV coordinate
+
+		ImU32 color = IM_COL32_WHITE;
+
+		ImDrawVert vertex1;
+		vertex1.pos = ImVec2(x1, y1);
+		vertex1.uv = uv1;
+		vertex1.col = color;
+
+		ImDrawVert vertex2;
+		vertex2.pos = ImVec2(x2, y1);
+		vertex2.uv = uv2;
+		vertex2.col = color;
+
+		ImDrawVert vertex3;
+		vertex3.pos = ImVec2(x2, y2);
+		vertex3.uv = uv3;
+		vertex3.col = color;
+
+		ImDrawVert vertex4;
+		vertex4.pos = ImVec2(x1, y1);
+		vertex4.uv = uv1;
+		vertex4.col = color;
+
+		ImDrawVert vertex5;
+		vertex5.pos = ImVec2(x2, y2);
+		vertex5.uv = uv3;
+		vertex5.col = color;
+
+		ImDrawVert vertex6;
+		vertex6.pos = ImVec2(x1, y2);
+		vertex6.uv = uv4;
+		vertex6.col = color;
+
+		vertexData[0] = vertex1;
+		vertexData[1] = vertex2;
+		vertexData[2] = vertex3;
+		vertexData[3] = vertex4;
+		vertexData[4] = vertex5;
+		vertexData[5] = vertex6;
+
+		std::vector<uint16_t> indicies = { 0, 1, 2, 3, 4, 5 };
+
+		SubmitQueueInfo info = {};
+		info.AlphaBlend = AlphaBlend;
+		info.descriptor = imageId;
+		info.vertices = vertexData;
+		info.indices = indicies;
+		info.scissor = scissor;
+
+		// submit to queue
+		vulkan_driver->queue_submit(info);
+	}
+	else {
+		SDL_FRect destRect = { m_calculatedSizeF.left, m_calculatedSizeF.top, m_calculatedSizeF.right, m_calculatedSizeF.bottom };
+		if (scaleOutput) {
+			destRect.x = destRect.x * window->GetWidthScale();
+			destRect.y = destRect.y * window->GetHeightScale();
+			destRect.w = destRect.w * window->GetWidthScale();
+			destRect.h = destRect.h * window->GetHeightScale();
+		}
+
+		SDL_Rect originClip = {};
+		SDL_BlendMode oldBlendMode = SDL_BLENDMODE_NONE;
+
+		if (clipRect) {
+			SDL_RenderGetClipRect(renderer->GetSDLRenderer(), &originClip);
+
+			SDL_Rect testClip = { clipRect->left, clipRect->top, clipRect->right - clipRect->left, clipRect->bottom - clipRect->top };
+			if (scaleOutput) {
+				testClip.x = static_cast<int>(testClip.x * window->GetWidthScale());
+				testClip.y = static_cast<int>(testClip.y * window->GetHeightScale());
+				testClip.w = static_cast<int>(testClip.w * window->GetWidthScale());
+				testClip.h = static_cast<int>(testClip.h * window->GetHeightScale());
+			}
+
+			SDL_RenderSetClipRect(renderer->GetSDLRenderer(), &testClip);
+		}
+
+		if (AlphaBlend) {
+			SDL_GetTextureBlendMode(m_sdl_tex, &oldBlendMode);
+			SDL_SetTextureBlendMode(m_sdl_tex, renderer->GetSDLBlendMode());
+		}
+
+		SDL_SetTextureColorMod(m_sdl_tex, static_cast<uint8_t>(TintColor.R * 255), static_cast<uint8_t>(TintColor.G * 255), static_cast<uint8_t>(TintColor.B * 255));
+		SDL_SetTextureAlphaMod(m_sdl_tex, static_cast<uint8_t>(255 - (Transparency / 100.0) * 255));
+
+		int error = SDL_RenderCopyExF(
+			renderer->GetSDLRenderer(),
+			m_sdl_tex,
+			nullptr,
+			&destRect,
+			Rotation,
+			nullptr,
+			(SDL_RendererFlip)0
+		);
+
+		if (error != 0) {
+			throw SDLException();
+		}
+
+		if (AlphaBlend) {
+			SDL_SetTextureBlendMode(m_sdl_tex, oldBlendMode);
+		}
+
+		if (clipRect) {
+			if (originClip.w == 0 || originClip.h == 0) {
+				SDL_RenderSetClipRect(renderer->GetSDLRenderer(), nullptr);
+			}
+			else {
+				SDL_RenderSetClipRect(renderer->GetSDLRenderer(), &originClip);
+			}
+		}
 	}
 }
 
 void Texture2D::CalculateSize() {
 	Window* window = Window::GetInstance();
-	int wWidth = window->GetWidth();
-	int wHeight = window->GetHeight();
+	int wWidth = window->GetBufferWidth();
+	int wHeight = window->GetBufferHeight();
 
-	LONG xPos = static_cast<LONG>(wWidth * Position.X.Scale) + static_cast<LONG>(Position.X.Offset);
-	LONG yPos = static_cast<LONG>(wHeight * Position.Y.Scale) + static_cast<LONG>(Position.Y.Offset);
+	float xPos = static_cast<float>((wWidth * Position.X.Scale) + Position.X.Offset);
+	float yPos = static_cast<float>((wHeight * Position.Y.Scale) + Position.Y.Offset);
+	
+	float width = static_cast<float>((m_actualSize.right * Size.X.Scale) + Size.X.Offset);
+	float height = static_cast<float>((m_actualSize.bottom * Size.Y.Scale) + Size.Y.Offset);
 
-	LONG width = static_cast<LONG>(m_actualSize.right * Size.X.Scale) + static_cast<LONG>(Size.X.Offset);
-	LONG height = static_cast<LONG>(m_actualSize.bottom * Size.Y.Scale) + static_cast<LONG>(Size.Y.Offset);
+	m_preAnchoredSize = { (LONG)xPos, (LONG)yPos, (LONG)width, (LONG)height };
+	m_preAnchoredSizeF = { xPos, yPos, width, height };
 
-	m_preAnchoredSize = { xPos, yPos, width, height };
-
-	LONG xAnchor = (LONG)(width * std::clamp(AnchorPoint.X, 0.0, 1.0));
-	LONG yAnchor = (LONG)(height * std::clamp(AnchorPoint.Y, 0.0, 1.0));
+	float xAnchor = width * std::clamp((float)AnchorPoint.X, 0.0f, 1.0f);
+	float yAnchor = height * std::clamp((float)AnchorPoint.Y, 0.0f, 1.0f);
 	
 	xPos -= xAnchor;
 	yPos -= yAnchor;
 
-	m_calculatedSize = { xPos, yPos, width, height };
+	m_calculatedSize = { (LONG)xPos, (LONG)yPos, (LONG)width, (LONG)height };
+	m_calculatedSizeF = { xPos, yPos, width, height };
 
-	AbsolutePosition = { (double)xPos, (double)yPos };
-	AbsoluteSize = { (double)width, (double)height };
+	AbsolutePosition = { xPos, yPos };
+	AbsoluteSize = { width, height };
 }
 
-RECT Texture2D::GetOriginalRECT() {
+Rect Texture2D::GetOriginalRECT() {
 	return m_actualSize;
 }
 
+void Texture2D::SetOriginalRECT(Rect size) {
+	m_actualSize = size;
+}
+
 Texture2D* Texture2D::FromTexture2D(Texture2D* tex) {
-	//return new Texture2D(tex->m_pBuffer, tex->m_bufferSize);
-	auto copy = new Texture2D(tex->m_pTexture);
+	auto copy = new Texture2D(tex->m_sdl_tex);
 	copy->m_actualSize = tex->m_actualSize;
 	copy->Position = tex->Position;
 	copy->Size = tex->Size;
-
+	
 	return copy;
 }
 
@@ -249,49 +396,44 @@ Texture2D* Texture2D::FromPNG(std::string fileName) {
 }
 
 void Texture2D::LoadImageResources(uint8_t* buffer, size_t size) {
-	ID3D11Device* device = Renderer::GetInstance()->GetDevice();
-	ID3D11DeviceContext* context = Renderer::GetInstance()->GetImmediateContext();
-	
-	ID3D11Resource* resource = nullptr;
-	HRESULT hr = CreateWICTextureFromMemoryEx(
-		device,
-		nullptr,//context,
-		buffer,
-		size,
-		0,
-		D3D11_USAGE_DEFAULT,
-		D3D11_BIND_SHADER_RESOURCE,
-		0,
-		0,
-		WIC_LOADER_FORCE_RGBA32 | WIC_LOADER_IGNORE_SRGB,
-		&resource,
-		&m_pTexture
-	);
+	if (Renderer::GetInstance()->IsVulkan()) {
+		auto tex_data = vkTexture::TexLoadImage(buffer, size);
 
-	if (FAILED(hr)) {
-		throw std::runtime_error("Failed to load texture resource view!");
+		m_actualSize = { 0, 0, tex_data->Width, tex_data->Height };
+		m_vk_tex = tex_data;
+
+		m_bDisposeTexture = true;
+		m_ready = true;
+		delete[] buffer;
 	}
+	else {
+		SDL_RWops* rw = SDL_RWFromMem(buffer, (int)size);
 
-	ID3D11Texture2D* texture = nullptr;
-	hr = resource->QueryInterface<ID3D11Texture2D>(&texture);
+		// check if buffer magic is BMP
+		if (buffer[0] == 0x42 && buffer[1] == 0x4D) {
+			m_sdl_surface = SDL_LoadBMP_RW(rw, 1);
+		}
+		else {
+			m_sdl_surface = IMG_Load_RW(rw, 1);
+		}
 
-	if (FAILED(hr)) {
-		throw std::runtime_error("Failed to load texture resource view!");
+		if (!m_sdl_surface) {
+			throw SDLException();
+		}
+
+		m_sdl_tex = SDL_CreateTextureFromSurface(Renderer::GetInstance()->GetSDLRenderer(), m_sdl_surface);
+		if (!m_sdl_tex) {
+			throw SDLException();
+		}
+
+		// sdl get texture resolution
+		int w, h;
+		SDL_QueryTexture(m_sdl_tex, nullptr, nullptr, &w, &h);
+
+		m_bDisposeTexture = true;
+		delete[] buffer;
+		m_actualSize = { 0, 0, w, h };
+
+		m_ready = true;
 	}
-
-	D3D11_TEXTURE2D_DESC desc;
-	texture->GetDesc(&desc);
-
-	Size.X.Scale = 1.0f;
-	Size.X.Offset = 0;
-	Size.Y.Scale = 1.0f;
-	Size.Y.Offset = 0;
-	
-	m_actualSize = { 0, 0, (LONG)desc.Width, (LONG)desc.Height };
-
-	// Free the copied buffer
-	delete[] buffer;
-
-	texture->Release();
-	resource->Release();
 }

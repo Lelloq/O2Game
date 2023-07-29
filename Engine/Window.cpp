@@ -35,7 +35,23 @@ bool Window::Create(RendererMode mode, std::string title, int width, int height,
 	m_bufferHeight = bufferHeight;
 	m_mainTitle = title;
 
-	uint32_t flags = SDL_WINDOW_SHOWN;
+	uint32_t flags = SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
+	if (mode == RendererMode::OPENGL) {
+		flags |= SDL_WINDOW_OPENGL;
+	}
+	if (mode == RendererMode::VULKAN) {
+		flags |= SDL_WINDOW_VULKAN;
+	}
+
+	// check if width and height are same in current display
+	SDL_DisplayMode dm;
+	SDL_GetCurrentDisplayMode(0, &dm);
+
+	bool is_fullscreen = false;
+	if (width == dm.w && height == dm.h) {
+		is_fullscreen = true;
+	}
+
 	m_window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, flags);
 
 	if (m_window == nullptr) {
@@ -44,6 +60,10 @@ bool Window::Create(RendererMode mode, std::string title, int width, int height,
 		return false;
 	}
 	
+	if (is_fullscreen) {
+		SDL_SetWindowBordered(m_window, SDL_FALSE);
+	}
+
 	return true;
 }
 
@@ -58,15 +78,46 @@ bool Window::Destroy() {
 	return true;
 }
 
-SDL_Window* Window::GetWindow() const {
-	return m_window;
+void Window::ResizeWindow(int width, int height) {
+	SDL_DisplayMode dm;
+	SDL_GetCurrentDisplayMode(0, &dm);
+
+	bool is_fullscreen = false;
+	if (width == dm.w && height == dm.h) {
+		is_fullscreen = true;
+	}
+
+	m_width = width;
+	m_height = height;
+
+	SDL_SetWindowSize(m_window, width, height);
+	SDL_SetWindowFullscreen(m_window, is_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+	SDL_SetWindowBordered(m_window, is_fullscreen ? SDL_FALSE : SDL_TRUE);
+	
+	if (!is_fullscreen) {
+		SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+	}
+
+	m_resizeRenderer = true;
 }
 
-HWND Window::GetHandle() const {
-	SDL_SysWMinfo wmInfo{};
-	SDL_VERSION(&wmInfo.version);
-	SDL_GetWindowWMInfo(m_window, &wmInfo);
-	return wmInfo.info.win.window;
+void Window::ResizeBuffer(int width, int height) {
+	m_bufferWidth = width;
+	m_bufferHeight = height;
+
+	m_resizeRenderer = true;
+}
+
+bool Window::ShouldResizeRenderer() {
+	return m_resizeRenderer;
+}
+
+void Window::HandleResizeRenderer() {
+	m_resizeRenderer = false;
+}
+
+SDL_Window* Window::GetWindow() const {
+	return m_window;
 }
 
 std::wstring UTF8_to_wchar(const char8_t* in) {
@@ -105,43 +156,10 @@ std::wstring UTF8_to_wchar(const char8_t* in) {
 
 void Window::SetWindowTitle(std::string& title) {
 	m_mainTitle = title;
-
-	std::u8string u8title(m_mainTitle.begin(), m_mainTitle.end());
-	std::u8string u8sub(m_subTitle.begin(), m_subTitle.end());
-	std::u8string combined = u8title + (u8sub.empty() ? u8sub : u8" - " + u8sub);
-
-#if _MSC_VER
-	std::wstring _title = UTF8_to_wchar(combined.c_str());
-	SetWindowTextW(GetHandle(), (LPCWSTR)_title.c_str());
-#else
-	if (m_subTitle.empty()) {
-		SDL_SetWindowTitle(m_window, (const char*)u8title.c_str());
-	}
-	else {
-		SDL_SetWindowTitle(m_window, (const char*)(u8title + u8" - " + u8sub).c_str());
-	}
-#endif
 }
 
 void Window::SetWindowSubTitle(std::string& subTitle) {
 	m_subTitle = subTitle;
-
-	std::u8string u8title(m_mainTitle.begin(), m_mainTitle.end());
-	std::u8string u8sub(m_subTitle.begin(), m_subTitle.end());
-
-	std::u8string combined = u8title + (u8sub.empty() ? u8sub : u8" - " + u8sub);
-
-#if _MSC_VER
-	std::wstring _title = UTF8_to_wchar(combined.c_str());
-	SetWindowTextW(GetHandle(), (LPCWSTR)_title.c_str());
-#else
-	if (m_subTitle.empty()) {
-		SDL_SetWindowTitle(m_window, (const char*)u8title.c_str());
-	}
-	else {
-		SDL_SetWindowTitle(m_window, (const char*)(u8title + u8" - " + u8sub).c_str());
-	}
-#endif
 }
 
 int Window::GetWidth() const {
@@ -166,6 +184,14 @@ float Window::GetWidthScale() {
 
 float Window::GetHeightScale() {
 	return static_cast<float>(m_height) / static_cast<float>(m_bufferHeight);
+}
+
+void Window::SetScaleOutput(bool value) {
+	m_scaleOutput = value;
+}
+
+bool Window::IsScaleOutput() {
+	return m_scaleOutput;
 }
 
 Window* Window::GetInstance() {

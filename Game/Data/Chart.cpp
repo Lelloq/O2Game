@@ -5,6 +5,7 @@
 #include <filesystem>
 #include "Util/md5.h"
 #include <random>
+#include "Util/Util.hpp"
 
 Chart::Chart() {
 	InitialSvMultiplier = 1.0f;
@@ -25,9 +26,9 @@ Chart::Chart(Osu::Beatmap& beatmap) {
 	}
 
 	//m_audio = beatmap.AudioFilename;
-	m_title = beatmap.Title;
+	m_title = std::u8string(beatmap.Title.begin(), beatmap.Title.end());
 	m_keyCount = beatmap.CircleSize;
-	m_artist = beatmap.Artist;
+	m_artist = std::u8string(beatmap.Artist.begin(), beatmap.Artist.end());
 	m_beatmapDirectory = beatmap.CurrentDir;
 
 	for (auto& event : beatmap.Events) {
@@ -49,6 +50,8 @@ Chart::Chart(Osu::Beatmap& beatmap) {
 					AutoSample sample = {};
 					sample.StartTime = event.StartTime;
 					sample.Index = beatmap.GetCustomSampleIndex(fileName);
+					sample.Volume = 1;
+					sample.Pan = 0;
 
 					m_autoSamples.push_back(sample);
 				}
@@ -62,6 +65,8 @@ Chart::Chart(Osu::Beatmap& beatmap) {
 		AutoSample sample = {};
 		sample.StartTime = beatmap.AudioLeadIn;
 		sample.Index = beatmap.GetCustomSampleIndex(beatmap.AudioFilename);
+		sample.Volume = 1;
+		sample.Pan = 0;
 
 		m_autoSamples.push_back(sample);
 	}
@@ -72,6 +77,8 @@ Chart::Chart(Osu::Beatmap& beatmap) {
 		info.Type = NoteType::NORMAL;
 		info.Keysound = note.KeysoundIndex;
 		info.LaneIndex = static_cast<int>(std::floorf(note.X * static_cast<float>(beatmap.CircleSize) / 512.0f));
+		info.Volume = static_cast<float>(note.Volume) / 100.0;
+		info.Pan = 0;
 
 		if (note.Type == 128) {
 			info.Type = NoteType::HOLD;
@@ -159,10 +166,10 @@ Chart::Chart(BMS::BMSFile& file) {
 	}
 
 	m_beatmapDirectory = file.CurrentDir;
-	m_title = file.Title;
+	m_title = std::u8string(file.Title.begin(), file.Title.end());
 	m_audio = "";// file.FileDirectory + "/" + "test.mp3";
 	m_keyCount = 7;
-	m_artist = file.Artist;
+	m_artist = std::u8string(file.Artist.begin(), file.Artist.end());
 	m_backgroundFile = file.StageFile;
 	BaseBPM = file.BPM;
 	m_customMeasures = file.Measures;
@@ -178,6 +185,8 @@ Chart::Chart(BMS::BMSFile& file) {
 		info.Type = NoteType::NORMAL;
 		info.LaneIndex = note.Lane;
 		info.Keysound = note.SampleIndex;
+		info.Volume = 1;
+		info.Pan = 0;
 		
 		if (note.EndTime != -1) {
 			info.Type = NoteType::HOLD;
@@ -192,6 +201,8 @@ Chart::Chart(BMS::BMSFile& file) {
 				AutoSample sm = {};
 				sm.StartTime = note.StartTime;
 				sm.Index = note.SampleIndex;
+				sm.Volume = 1;
+				sm.Pan = 0;
 
 				m_autoSamples.push_back(sm);
 			}
@@ -236,6 +247,8 @@ Chart::Chart(BMS::BMSFile& file) {
 		AutoSample sm = {};
 		sm.StartTime = autoSample.StartTime;
 		sm.Index = autoSample.SampleIndex;
+		sm.Volume = 1;
+		sm.Pan = 0;
 
 		m_autoSamples.push_back(sm);
 	}
@@ -275,7 +288,9 @@ Chart::Chart(BMS::BMSFile& file) {
 Chart::Chart(O2::OJN& file, int diffIndex) {
 	auto& diff = file.Difficulties[diffIndex];
 
-	m_title = file.Header.title;
+	m_title = CodepageToUtf8(file.Header.title, sizeof(file.Header.title), 949);
+	m_artist = CodepageToUtf8(file.Header.artist, sizeof(file.Header.artist), 949);
+
 	m_backgroundBuffer = file.BackgroundImage;
 	m_keyCount = 7;
 	m_customMeasures = diff.Measures;
@@ -287,6 +302,8 @@ Chart::Chart(O2::OJN& file, int diffIndex) {
 		info.Keysound = note.SampleRefId;
 		info.LaneIndex = note.LaneIndex;
 		info.Type = NoteType::NORMAL;
+		info.Volume = note.Volume;
+		info.Pan = note.Pan;
 
 		if (note.IsLN) {
 			info.Type = NoteType::HOLD;
@@ -301,6 +318,8 @@ Chart::Chart(O2::OJN& file, int diffIndex) {
 				AutoSample sm = {};
 				sm.StartTime = note.StartTime;
 				sm.Index = note.SampleRefId;
+				sm.Volume = note.Volume;
+				sm.Pan = note.Pan;
 
 				m_autoSamples.push_back(sm);
 			}
@@ -312,8 +331,6 @@ Chart::Chart(O2::OJN& file, int diffIndex) {
 	}
 
 	for (auto& timing : diff.Timings) {
-		//float BPM = 240.0 / timing.MsPerMark * 1000.0;
-
 		TimingInfo info = {};
 		info.StartTime = timing.Time;
 		info.Value = timing.BPM;
@@ -332,6 +349,8 @@ Chart::Chart(O2::OJN& file, int diffIndex) {
 		AutoSample sm = {};
 		sm.StartTime = autoSample.StartTime;
 		sm.Index = autoSample.SampleRefId;
+		sm.Volume = autoSample.Volume;
+		sm.Pan = autoSample.Pan;
 
 		m_autoSamples.push_back(sm);
 	}
@@ -377,7 +396,7 @@ int Chart::GetLength() {
 		: m_notes[m_notes.size() - 1].StartTime;
 }
 
-void Chart::ApplyMod(Mod mod) {
+void Chart::ApplyMod(Mod mod, void* data) {
 	switch (mod) {
 		case Mod::MIRROR: {
 			for (auto& note : m_notes) {
@@ -393,11 +412,23 @@ void Chart::ApplyMod(Mod mod) {
 			}
 
 			auto rng = std::default_random_engine{};
+			rng.seed(time(NULL));
+
 			std::shuffle(std::begin(lanes), std::end(lanes), rng);
 
 			for (auto& note : m_notes) {
 				note.LaneIndex = lanes[note.LaneIndex];
 			}
+			break;
+		}
+
+		case Mod::REARRANGE: {
+			int* lanes = reinterpret_cast<int*>(data);
+
+			for (auto& note : m_notes) {
+				note.LaneIndex = lanes[note.LaneIndex];
+			}
+
 			break;
 		}
 	}

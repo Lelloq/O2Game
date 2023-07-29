@@ -13,9 +13,13 @@ SceneManager::SceneManager() {
 }
 
 SceneManager::~SceneManager() {
-	for (auto& it : m_scenes) {
-		it.second->Detach();
-		delete it.second;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+
+		for (auto& it : m_scenes) {
+			it.second->Detach();
+			delete it.second;
+		}
 	}
 }
 
@@ -23,9 +27,7 @@ SceneManager* SceneManager::s_instance = nullptr;
 
 void SceneManager::Update(double delta) {
 	if (m_nextScene != nullptr) {
-		static std::mutex mutex;
-
-		std::lock_guard<std::mutex> lock(mutex);
+		std::lock_guard<std::mutex> lock(m_mutex);
 
 		if (!m_nextScene->Attach()) {
 			MessageBoxA(NULL, "Failed to init next scene", "EstEngine Error", MB_ICONERROR);
@@ -49,15 +51,43 @@ void SceneManager::Update(double delta) {
 	}
 	else {
 		m_currentScene->Update(delta);
+
+		if (m_queue_render.size()) {
+			for (auto it = m_queue_render.begin(); it != m_queue_render.end();) {
+				if (it->time <= std::chrono::system_clock::now()) {
+					it->callback();
+					it = m_queue_render.erase(it);
+				}
+				else {
+					it++;
+				}
+			}
+		}
 	}
 }
 
 void SceneManager::Render(double delta) {
+	m_renderId = std::this_thread::get_id();
+
 	if (m_currentScene) m_currentScene->Render(delta);
 }
 
 void SceneManager::Input(double delta) {
+	m_inputId = std::this_thread::get_id();
+
 	if (m_currentScene) m_currentScene->Input(delta);
+
+	if (m_queue_input.size()) {
+		for (auto it = m_queue_input.begin(); it != m_queue_input.end();) {
+			if (it->time <= std::chrono::system_clock::now()) {
+				it->callback();
+				it = m_queue_input.erase(it);
+			}
+			else {
+				it++;
+			}
+		}
+	}
 }
 
 void SceneManager::OnKeyDown(const KeyState& state) {
@@ -107,6 +137,62 @@ void SceneManager::IChangeScene(int idx) {
 
 void SceneManager::SetParent(Game* parent) {
 	m_parent = parent;
+}
+
+void SceneManager::SetFrameLimit(double frameLimit) {
+	m_parent->SetFramelimit(frameLimit);
+}
+
+void SceneManager::SetFrameLimitMode(FrameLimitMode mode) {
+	m_parent->SetFrameLimitMode(mode);
+}
+
+void SceneManager::DisplayFade(int transparency, std::function<void()> callback) {
+	std::thread([&, transparency, callback] {
+		std::lock_guard<std::mutex> lock(s_instance->m_mutex);
+
+		s_instance->m_parent->DisplayFade(transparency);
+		while (static_cast<int>(s_instance->m_parent->GetDisplayFade()) != transparency) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+
+		callback();
+	}).detach();
+}
+
+void SceneManager::ExecuteAfter(int ms_time, std::function<void()> callback) {
+	QueueInfo info = {};
+	info.callback = callback;
+	info.time = std::chrono::system_clock::now() + std::chrono::milliseconds(ms_time);
+
+	auto thread_id = std::this_thread::get_id();
+	if (thread_id == s_instance->m_renderId) {
+		s_instance->m_queue_render.push_back(std::move(info));
+	}
+	else {
+		s_instance->m_queue_input.push_back(std::move(info));
+	}
+}
+
+void SceneManager::GameExecuteAfter(ExecuteThread thread, int ms_time, std::function<void()> callback) {
+	Game* game = s_instance->m_parent;
+
+	if (game->GetThreadMode() == ThreadMode::SINGLE_THREAD) {
+		game->GetMainThread()->QueueAction(callback);
+	}
+	else {
+		switch (thread) {
+			case ExecuteThread::UPDATE: {
+				game->GetRenderThread()->QueueAction(callback);
+				break;
+			}
+
+			case ExecuteThread::WINDOW: {
+				game->GetMainThread()->QueueAction(callback);
+				break;
+			}
+		}
+	}
 }
 
 void SceneManager::StopGame() {

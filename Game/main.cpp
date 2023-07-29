@@ -12,15 +12,19 @@
 #include <filesystem>
 #include "../Engine/Win32ErrorHandling.h"
 #include "Data/Util/Util.hpp"
-#include "Resources/Configuration.hpp"
+#include "../Engine/Configuration.hpp"
+#include "Resources/DefaultConfiguration.h"
 #include <shlobj.h>
 #include "Data/OJM.hpp"
 #include <fstream>
+#include "../Engine/MsgBox.hpp"
 
+#if _WIN32
 extern "C" {
 	__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
 	__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
+#endif
 
 static int CALLBACK BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData) {
 
@@ -38,7 +42,7 @@ std::filesystem::path BrowseFolder(std::wstring saved_path) {
 	const wchar_t* path_param = saved_path.c_str();
 
 	BROWSEINFO bi = { 0 };
-	bi.lpszTitle = (L"Browse for folder...");
+	bi.lpszTitle = (L"Browse for Music Folder (.ojn files folder!)");
 	bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
 	bi.lpfn = BrowseCallbackProc;
 	bi.lParam = (LPARAM)path_param;
@@ -91,10 +95,16 @@ bool API_Query() {
 
 int Run(int argc, wchar_t* argv[]) {
 	try {
+		Configuration::SetDefaultConfiguration(defaultConfiguration);
+
 		std::filesystem::path parentPath = std::filesystem::path(argv[0]).parent_path();
-		std::wcout << argv[0];
+		if (parentPath.empty()) {
+			parentPath = std::filesystem::current_path();
+		}
 
 		if (SetCurrentDirectoryW((LPWSTR)parentPath.wstring().c_str()) == FALSE) {
+			std::cout << "GetLastError(): " << GetLastError() << ", with path: " << parentPath.string();
+			
 			MessageBoxA(NULL, "Failed to set directory!", "EstGame Error", MB_ICONERROR);
 			return -1;
 		}
@@ -115,11 +125,27 @@ int Run(int argc, wchar_t* argv[]) {
 		Win32Exception::ThrowIfError(hr);
 
 		for (int i = 1; i < argc; i++) {
-			if (std::filesystem::exists(argv[i])) {
+			std::wstring arg = argv[i];
+
+			// --autoplay, -a
+			if (arg.find(L"--autoplay") != std::wstring::npos || arg.find(L"-a") != std::wstring::npos) {
+				EnvironmentSetup::SetInt("ParameterAutoplay", 1);
+			}
+
+			// --rate, -r [float value range 0.5 - 2.0]
+			if (arg.find(L"--rate") != std::wstring::npos || arg.find(L"-r") != std::wstring::npos) {
+				if (i + 1 < argc) {
+					float rate = std::stof(argv[i + 1]);
+					rate = std::clamp(rate, 0.5f, 2.0f);
+
+					EnvironmentSetup::Set("ParameterRate", std::to_string(rate));
+				}
+			}
+
+			if (std::filesystem::exists(argv[i]) && EnvironmentSetup::GetPath("FILE").empty()) {
 				std::filesystem::path path = argv[i];
 
 				EnvironmentSetup::SetPath("FILE", path);
-				break;
 			}
 		}
 		
@@ -145,8 +171,10 @@ int HandleStructualException(int code) {
 
 #if _DEBUG
 int wmain(int argc, wchar_t* argv[]) {
+	return Run(argc, argv);
+
 	__try {
-		return Run(argc, argv);
+		
 	}
 	__except (HandleStructualException(GetExceptionCode())) {
 		return -1;
@@ -169,7 +197,12 @@ int wmain(int argc, wchar_t* argv[]) {
 	}*/
 }
 #else=
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ PWSTR pCmdLine, _In_ int nCmdShow) {
+	if (!API_Query()) {
+		MessageBoxA(NULL, "Failed to Authenticate to master server!", "Auth Failed", MB_ICONERROR);
+		return -1;
+	}
+	
 	__try {
 		return Run(__argc, __wargv);
 	}

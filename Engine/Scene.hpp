@@ -1,11 +1,12 @@
 #pragma once
+
 struct KeyState;
 struct MouseState;
 
 class Scene {
 public:
 	Scene();
-	~Scene();
+	virtual ~Scene() = default;
 
 	virtual bool Attach();
 	virtual bool Detach();

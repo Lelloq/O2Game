@@ -32,17 +32,21 @@ public:
 	void ListenEvent(std::function<void(GameTrackEvent)> callback);
 
 private:
-	std::vector<Note*> m_notes;
-	std::vector<Note*> m_noteCaches;
+	std::vector<std::shared_ptr<Note>> m_notes;
+	std::vector<std::shared_ptr<Note>> m_noteCaches;
+	std::vector<std::shared_ptr<Note>> m_inactive_notes;
 
 	RhythmEngine* m_engine;
 	int m_laneOffset;
 	int m_laneIndex;
+
 	int m_keySound;
+	int m_keyVolume;
+	int m_keyPan;
 
 	double m_deleteDelay;
 
-	Note* m_currentHold;
+	std::shared_ptr<Note> m_currentHold;
 	bool m_onHold;
 
 	std::function<void(GameTrackEvent)> m_callback;

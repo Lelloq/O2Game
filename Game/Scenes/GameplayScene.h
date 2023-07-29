@@ -32,36 +32,41 @@ public:
 private:
 	void* CreateScreenshotWin32();
 
-	std::unordered_map<int, Texture2D*> m_keyLighting;
-	std::unordered_map<int, Texture2D*> m_keyButtons;
-	std::unordered_map<int, Texture2D*> m_judgement;
-	std::unordered_map<int, Texture2D*> m_pills;
-	std::unordered_map<int, FrameTimer*> m_hitEffect;
-	std::unordered_map<int, FrameTimer*> m_holdEffect;
+	std::unordered_map<int, std::shared_ptr<Texture2D>> m_keyLighting;
+	std::unordered_map<int, std::shared_ptr<Texture2D>> m_keyButtons;
+	std::unordered_map<int, std::shared_ptr<Texture2D>> m_judgement;
+	std::unordered_map<int, std::shared_ptr<Texture2D>> m_pills;
+	std::unordered_map<int, std::shared_ptr<FrameTimer>> m_hitEffect;
+	std::unordered_map<int, std::shared_ptr<FrameTimer>> m_holdEffect;
 	std::unordered_map<int, bool> m_keyState;
 	std::unordered_map<int, UDim2> m_statsPos;
 
-	Button* m_exitButtonFunc;
-	Texture2D* m_exitBtn;
-	Texture2D* m_playBG;
+	std::unique_ptr<Button> m_exitButtonFunc;
+	std::unique_ptr<Texture2D> m_exitBtn;
+	std::unique_ptr<Texture2D> m_Playfield;
+	std::unique_ptr<Texture2D> m_PlayBG;
 
-	Tile2D* m_jamGauge;
-	Tile2D* m_waveGage;
-
-	Sprite2D* m_jamLogo;
-	Sprite2D* m_lifeBar;
-	Sprite2D* m_lnLogo;
-	Sprite2D* m_comboLogo;
+	std::unique_ptr<Texture2D> m_jamGauge;
+	std::unique_ptr<Texture2D> m_waveGage;
 	
-	NumericTexture* m_statsNum;
-	NumericTexture* m_lnComboNum;
-	NumericTexture* m_jamNum;
-	NumericTexture* m_scoreNum;
-	NumericTexture* m_comboNum;
+	std::unique_ptr<Sprite2D> m_jamLogo;
+	std::unique_ptr<Sprite2D> m_lifeBar;
+	std::unique_ptr<Sprite2D> m_lnLogo;
+	std::unique_ptr<Sprite2D> m_comboLogo;
+	std::unique_ptr<Sprite2D> m_targetBar;
 
-	Text* m_text;
+	std::unique_ptr<NumericTexture> m_statsNum;
+	std::unique_ptr<NumericTexture> m_lnComboNum;
+	std::unique_ptr<NumericTexture> m_jamNum;
+	std::unique_ptr<NumericTexture> m_scoreNum;
+	std::unique_ptr<NumericTexture> m_comboNum;
+	std::unique_ptr<NumericTexture> m_minuteNum;
+	std::unique_ptr<NumericTexture> m_secondNum;
 
-	RhythmEngine* m_game;
+	std::unique_ptr<Text> m_title;
+	std::unique_ptr<Text> m_autoText;
+
+	std::unique_ptr<RhythmEngine> m_game;
 
 	bool m_resourceFucked;
 	bool m_starting;
@@ -91,9 +96,15 @@ private:
 
 	/* Fixed Animation*/
 	double m_wiggleTime;
-	double m_wiggleOffsets;
+	double m_wiggleOffset;
+	double m_amplitude;
 
 	/* button */
 	bool m_drawExitButton;
 	bool m_doExit;
+
+	/* auto text size */
+	bool m_autoPlay;
+	int m_autoTextSize;
+	UDim2 m_autoTextPos;
 };

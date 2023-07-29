@@ -1,6 +1,14 @@
+#define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "Util.hpp"
 #include <numeric>
 #include <algorithm>
+#if _WIN32
+#include <Windows.h>
+#endif
+#include <string>
+#include <codecvt>
 
 std::vector<std::string> splitString(std::string& input, char delimeter) {
 	std::stringstream ss(input);
@@ -107,4 +115,33 @@ void flipArray(uint8_t* arr, size_t size) {
 		start++;
 		end--;
 	}
+}
+
+std::u8string CodepageToUtf8(const char* string, size_t len, int codepage) {
+#if _WIN32
+	int size_needed = MultiByteToWideChar(codepage, 0, &string[0], (int)len, NULL, 0);
+	wchar_t* temp_string = new wchar_t[size_needed];
+	if (!temp_string) {
+		throw std::runtime_error("Out of memory");
+	}
+
+	MultiByteToWideChar(codepage, 0, &string[0], (int)len, temp_string, size_needed);
+
+	int utf8_size_needed = WideCharToMultiByte(CP_UTF8, 0, temp_string, size_needed, NULL, 0, NULL, NULL);
+	char8_t* result = new char8_t[utf8_size_needed];
+	if (!result) {
+		delete[] temp_string;
+		throw std::runtime_error("Out of memory");
+	}
+
+	WideCharToMultiByte(CP_UTF8, 0, temp_string, size_needed, (LPSTR)&result[0], utf8_size_needed, NULL, NULL);
+
+	delete[] temp_string;
+	std::u8string str_result = result;
+	delete[] result;
+
+	return str_result;
+#else
+	return std::u8string(string, len);
+#endif
 }

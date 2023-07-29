@@ -44,6 +44,7 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -51,6 +52,7 @@
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -111,7 +113,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(SolutionDir)lib\$(Platform)\$(Configuration)\Engine.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VULKAN_SDK)/lib/vulkan-1.lib;$(SolutionDir)lib\$(Platform)\$(Configuration)\Engine.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -131,32 +133,34 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(SolutionDir)lib\$(Platform)\$(Configuration)\Engine.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VULKAN_SDK)/lib/vulkan-1.lib;$(SolutionDir)lib\$(Platform)\$(Configuration)\Engine.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Scenes\Converters\ToOsu.cpp" />
+    <ClCompile Include="Scenes\EditorScene.cpp" />
+    <ClCompile Include="Engine\BGMPreview.cpp" />
     <ClCompile Include="Engine\Button.cpp" />
     <ClCompile Include="Data\MusicDatabase.cpp" />
     <ClCompile Include="Scenes\IntroScene.cpp" />
-    <ClCompile Include="Resources\Configuration.cpp" />
     <ClCompile Include="Data\AutoReplay.cpp" />
     <ClCompile Include="Data\bms.cpp" />
     <ClCompile Include="Data\Chart.cpp" />
     <ClCompile Include="Data\Util\md5.cpp" />
     <ClCompile Include="Data\Util\Util.cpp" />
     <ClCompile Include="Data\osu.cpp" />
-    <ClCompile Include="Engine\DrawableLine.cpp" />
     <ClCompile Include="Engine\FrameTimer.cpp" />
     <ClCompile Include="Data\OJM.cpp" />
     <ClCompile Include="Resources\SkinConfig.cpp" />
     <ClCompile Include="Scenes\ResultScene.cpp" />
     <ClCompile Include="Scenes\SongSelectScene.cpp" />
+    <ClInclude Include="Resources\DefaultConfiguration.h" />
+    <ClInclude Include="Scenes\Converters\ToOsu.hpp" />
+    <ClInclude Include="Scenes\EditorScene.hpp" />
+    <ClInclude Include="Engine\BGMPreview.hpp" />
     <ClInclude Include="Engine\Button.hpp" />
     <ClInclude Include="Data\MusicDatabase.h" />
     <ClInclude Include="Scenes\IntroScene.hpp" />
-    <ClInclude Include="Resources\Configuration.hpp" />
-    <ClInclude Include="Data\Util\mINI.h" />
-    <ClInclude Include="Engine\DrawableLine.hpp" />
     <ClCompile Include="Engine\DrawableTile.cpp" />
     <ClCompile Include="Engine\ScoreManager.cpp" />
     <ClCompile Include="EnvironmentSetup.cpp" />

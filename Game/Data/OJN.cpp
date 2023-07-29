@@ -7,14 +7,17 @@
 
 using namespace O2;
 
-//std::stringstream LoadOJNFile(std::string path);
-
 OJN::OJN() {
 	Header = {};
 }
 
 OJN::~OJN() {
-	
+	if (IsValid()) {
+		for (int i = 0; i < 3; i++) {
+			auto& diff = Difficulties[i];
+			diff.Samples.clear();
+		}
+	}
 }
 
 void OJN::Load(std::filesystem::path& file) {
@@ -22,18 +25,20 @@ void OJN::Load(std::filesystem::path& file) {
 
 	CurrrentDir = file.parent_path().string();
 
-	std::fstream fs(file, std::ios::binary | std::ios::in);
-	if (!fs.is_open()) {
-		::printf("Failed to open: %s\n", file.string().c_str());
-		return;
-	}
+	auto fs = LoadOJNFile(file);
 
 	fs.read((char*)&Header, sizeof(Header));
 
 	if (memcmp(Header.signature, signature, 4) != 0) {
 		::printf("Invalid OJN file: %s\n", file.string().c_str());
 		::printf("Dumping 1-3 byte: %c%c%c\n", Header.signature[0], Header.signature[1], Header.signature[2]);
-		return;
+		
+		throw std::runtime_error("Invalid OJN Header at file: " + file.string());
+	}
+	
+	KeyCount = 7;
+	if (Header.encode_version == 5.0) {
+		fs.read((char*)&KeyCount, sizeof(int));
 	}
 
 	std::map<int, std::vector<Package>> difficulty;
@@ -46,32 +51,38 @@ void OJN::Load(std::filesystem::path& file) {
 
 		difficulty[i] = {};
 
-		for (int j = 0; j < Header.package_count[i]; j++) {
-			Package pkg = {};
-			fs.read((char*)&pkg.Measure, 4);
-			fs.read((char*)&pkg.Channel, 2);
-			fs.read((char*)&pkg.EventCount, 2);
-
-			if (pkg.EventCount > 192) {
-				__debugbreak();
-			}
-
-			for (int i = 0; i < pkg.EventCount; i++) {
-				Event ev = {};
-				if (pkg.Channel == 0 || pkg.Channel == 1) {
-					fs.read((char*)&ev.BPM, sizeof(float));
-				}
-				else {
-					fs.read((char*)&ev.Value, sizeof(short));
-					fs.read((char*)&ev.VolPan, sizeof(char));
-					fs.read((char*)&ev.Type, sizeof(char));
+		if (size > 0) {
+			for (int j = 0; j < Header.package_count[i]; j++) {
+				if (fs.tellg() > endOffset) {
+					throw std::runtime_error("Block data size overflow! at file: " + file.string());
 				}
 
-				pkg.Events.push_back(ev);
-			}
+				Package pkg = {};
+				fs.read((char*)&pkg.Measure, 4);
+				fs.read((char*)&pkg.Channel, 2);
+				fs.read((char*)&pkg.EventCount, 2);
 
-			if (pkg.EventCount > 0) {
-				difficulty[i].push_back(pkg);
+				if (pkg.EventCount > 192) {
+					throw std::runtime_error("Event count at measure: " + std::to_string(pkg.Measure) + " exceed the limit! (limit: 192)");
+				}
+
+				for (int i = 0; i < pkg.EventCount; i++) {
+					Event ev = {};
+					if (pkg.Channel == 0 || pkg.Channel == 1) {
+						fs.read((char*)&ev.BPM, sizeof(float));
+					}
+					else {
+						fs.read((char*)&ev.Value, sizeof(short));
+						fs.read((char*)&ev.VolPan, sizeof(char));
+						fs.read((char*)&ev.Type, sizeof(char));
+					}
+
+					pkg.Events.push_back(ev);
+				}
+
+				if (pkg.EventCount > 0) {
+					difficulty[i].push_back(pkg);
+				}
 			}
 		}
 
@@ -91,8 +102,7 @@ void OJN::Load(std::filesystem::path& file) {
 		ThumbnailImage.resize(Header.bmp_size);
 		fs.read((char*)ThumbnailImage.data(), Header.bmp_size);
 	}
-
-	fs.close();
+	
 	ParseNoteData(this, difficulty);
 
 	m_valid = true;
@@ -122,6 +132,7 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 					ev.Channel = package.Channel;
 					ev.Position = position;
 					ev.Value = event.BPM;
+					ev.CellSize = package.EventCount;
 
 					events[i].push_back(ev);
 				}
@@ -133,6 +144,7 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 					NoteEvent ev = {};
 					ev.Measure = package.Measure;
 					ev.Channel = package.Channel;
+					ev.CellSize = package.EventCount;
 					ev.Position = position;
 					ev.Value = event.Value - 1;
 
@@ -140,8 +152,23 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 						ev.Value += 1000;
 					}
 
-					// do we need parse the VolPan here?
-					// nowdays OJN/OJM do not use VolPan like BMS
+					// nvm, we need parse it :troll:
+
+					float volume = ((event.VolPan >> 4) & 0x0F) / 16.0f;
+					if (volume == 0.0f) {
+						volume = 1.0f;
+					}
+
+					float pan = (event.VolPan & 0x0F);
+					if (pan == 0.0f) {
+						pan = 8.0f;	
+					}
+
+					pan -= 8.0f;
+					pan /= 8.0f;
+
+					ev.Volume = volume;
+					ev.Pan = pan;
 
 					int type = event.Type % 4;
 
@@ -183,6 +210,7 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 		std::vector<O2Note> notes;
 		std::vector<O2Note> autoSamples;
 		std::vector<O2Timing> bpmChanges;
+		std::vector<O2Timing> measureLengthChanges;
 		std::vector<double> measureList;
 
 		bpmChanges.push_back({ Header.bpm, 0 });
@@ -194,6 +222,8 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 		double timer = 0;
 		
 		double holdNotes[7] = {};
+		float holdNotesPos[7] = { -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0 };
+
 		int currentMeasure = 0;
 
 		// sort based on measure + position
@@ -217,10 +247,11 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 			measurePosition = position;
 
 			if (event.Channel == 0) {
+				measureLengthChanges.push_back({ event.Value, timer, (float)(event.Measure + event.Position) });
 				measureFraction = event.Value;
 			}
 			else if (event.Channel == 1) {
-				bpmChanges.push_back({ event.Value, timer });
+				bpmChanges.push_back({ event.Value, timer, (float)(event.Measure + event.Position) });
 				currentBPM = event.Value;
 			}
 			else if (event.Channel < 9) {
@@ -229,18 +260,31 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 				switch (event.Type) {
 					case NoteEventType::HoldStart: {
 						holdNotes[laneIndex] = timer;
+						holdNotesPos[laneIndex] = event.Measure + event.Position;
 						break;
 					}
 
 					case NoteEventType::HoldEnd: {
-						O2Note note = {};
-						note.StartTime = holdNotes[laneIndex];
-						note.EndTime = timer;
-						note.IsLN = true;
-						note.SampleRefId = static_cast<int>(event.Value);
-						note.LaneIndex = laneIndex;
+						if (holdNotesPos[laneIndex] != -1) {
+							O2Note note = {};
+							note.StartTime = holdNotes[laneIndex];
+							note.EndTime = timer;
+							note.IsLN = true;
+							note.SampleRefId = static_cast<int>(event.Value);
+							note.LaneIndex = laneIndex;
+							note.Volume = event.Volume;
+							note.Pan = event.Pan;
+							note.Channel = event.Channel;
+							note.Position = holdNotesPos[laneIndex];
+							note.EndPosition = event.Measure + event.Position;
+							holdNotesPos[laneIndex] = -1;
+							holdNotes[laneIndex] = -1;
 
-						notes.push_back(note);
+							assert(note.Position != -1);
+							assert(note.EndPosition != -1);
+
+							notes.push_back(note);
+						}
 						break;
 					}
 
@@ -249,7 +293,13 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 						note.StartTime = timer;
 						note.IsLN = false;
 						note.SampleRefId = static_cast<int>(event.Value);
-						note.LaneIndex = laneIndex;
+						note.LaneIndex = laneIndex; 
+						note.Volume = event.Volume;
+						note.Pan = event.Pan;
+						note.Channel = event.Channel;
+						note.Position = event.Measure + event.Position;
+
+						assert(note.Position != -1);
 
 						notes.push_back(note);
 						break;
@@ -261,6 +311,12 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 				sample.StartTime = timer;
 				sample.LaneIndex = -1;
 				sample.SampleRefId = static_cast<int>(event.Value);
+				sample.Volume = event.Volume;
+				sample.Pan = event.Pan;
+				sample.Channel = event.Channel;
+				sample.Position = event.Measure + event.Position;
+
+				assert(sample.Position != -1);
 
 				autoSamples.push_back(sample);
 			}
@@ -272,55 +328,78 @@ void OJN::ParseNoteData(OJN* ojn, std::map<int, std::vector<Package>>& pkg) {
 		diff.Timings = bpmChanges;
 		diff.Measures = measureList;
 		diff.Samples = ojm.Samples;
+		diff.MeasureLenghts = measureLengthChanges;
 		diff.AudioLength = timer + 500;
+		diff.Valid = !notes.empty();
 
 		Difficulties[i] = std::move(diff);
 	}
 }
 
-//std::stringstream LoadOJNFile(std::string path) {
-//	std::fstream fs(path, std::ios::in | std::ios::binary);
-//
-//	fs.seekg(0, std::ios::end);
-//	size_t sz = fs.tellg();
-//	fs.seekg(0, std::ios::beg);
-//
-//	char* input = new char[sz];
-//	fs.read(input, sz);
-//
-//	char newSign[3] = { 'n', 'e', 'w' };
-//	char checkSign[3];
-//
-//	fs.seekg(0, std::ios::beg);
-//	fs.read(checkSign, 3);
-//
-//	if (memcmp(newSign, checkSign, 3) == 0) {
-//		fs.seekg(3, std::ios::beg);
-//		uint8_t blockSz = 0, mainKey = 0, midKey = 0, initialKey = 0;
-//		fs.read((char*)&blockSz, 1);
-//		fs.read((char*)&mainKey, 1);
-//		fs.read((char*)&midKey, 1);
-//		fs.read((char*)&initialKey, 1);
-//
-//		uint8_t* key = new uint8_t[blockSz];
-//		memset(key, mainKey, blockSz);
-//		key[0] = initialKey;
-//		key[(int)std::floor(blockSz / 2.0f)] = midKey;
-//
-//		size_t outputLen = sz - fs.tellg();
-//		char* output = new char[outputLen];
-//		for (int i = 0; i < outputLen; i += blockSz) {
-//			for (int j = 0; j < blockSz; j++) {
-//				int offset = i + j;
-//				if (offset >= outputLen) {
-//					// TODO: return
-//				}
-//
-//				output[offset] = (char)(input[sz - (offset + 1)] ^ key[j]);
-//			}
-//		}
-//	}
-//	else {
-//		
-//	}
-//}
+std::stringstream OJN::LoadOJNFile(std::filesystem::path path) {
+	std::fstream fs(path, std::ios::in | std::ios::binary);
+	if (!fs.is_open()) {
+		throw std::runtime_error("Failed to open: " + path.string());
+	}
+
+	fs.seekg(0, std::ios::end);
+	size_t sz = fs.tellg();
+	fs.seekg(0, std::ios::beg);
+
+	char* input = new char[sz];
+	fs.read(input, sz);
+
+	char newSign[3] = { 'n', 'e', 'w' };
+	char checkSign[3];
+
+	fs.seekg(0, std::ios::beg);
+	fs.read(checkSign, 3);
+
+	if (memcmp(newSign, checkSign, 3) == 0) {
+		fs.seekg(3, std::ios::beg);
+		uint8_t blockSz = 0, mainKey = 0, midKey = 0, initialKey = 0;
+		fs.read((char*)&blockSz, 1);
+		fs.read((char*)&mainKey, 1);
+		fs.read((char*)&midKey, 1);
+		fs.read((char*)&initialKey, 1);
+
+		uint8_t* key = new uint8_t[blockSz];
+		memset(key, mainKey, blockSz);
+		key[0] = initialKey;
+		key[(int)std::floor(blockSz / 2.0f)] = midKey;
+
+		size_t outputLen = sz - fs.tellg();
+		char* output = new char[outputLen];
+		for (int i = 0; i < outputLen; i += blockSz) {
+			for (int j = 0; j < blockSz; j++) {
+				int offset = i + j;
+				if (offset >= outputLen) {
+					goto DONE;
+				}
+
+				output[offset] = (char)(input[sz - (offset + 1)] ^ key[j]);
+			}
+		}
+
+		DONE:
+		fs.close();
+
+		std::stringstream ss;
+		ss.write(output, outputLen);
+
+		delete[] input;
+		delete[] output;
+
+		return ss;
+	}
+	else {
+		fs.close();
+
+		std::stringstream ss;
+		ss.write(input, sz);
+
+		delete[] input;
+
+		return ss;
+	}
+}

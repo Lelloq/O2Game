@@ -4,16 +4,23 @@
 #include "InputManager.hpp"
 #include "SceneManager.hpp"
 #include "Text.hpp"
+#include "ResizableImage.hpp"
+#include "Threading/GameThread.hpp"
 
 enum class ThreadMode {
 	SINGLE_THREAD,
 	MULTI_THREAD
 };
 
+enum class FrameLimitMode {
+	MENU,
+	GAME
+};
+
 class Game {
 public:
 	Game();
-	~Game();
+	virtual ~Game();
 	
 	bool virtual Init();
 	void virtual Run(double frameRate);
@@ -21,10 +28,19 @@ public:
 
 	void SetThreadMode(ThreadMode mode);
 	void SetRenderMode(RendererMode mode);
+	void SetFrameLimitMode(FrameLimitMode mode);
 	void SetFramelimit(double frameRate);
 
 	void SetBufferSize(int width, int height);
 	void SetWindowSize(int width, int height);
+	void SetFullscreen(bool fullscreen);
+
+	GameThread* GetRenderThread();
+	GameThread* GetMainThread();
+
+	void DisplayFade(int transparency);
+	float GetDisplayFade();
+	ThreadMode GetThreadMode();
 	
 protected:
 	virtual void Update(double deltaTime);
@@ -40,11 +56,17 @@ protected:
 private:
 	void DrawFPS(double delta);
 	double m_frameInterval;
+	double m_imguiInterval;
 	int m_frameCount;
 	int m_currentFrameCount;
+	float m_currentFade;
+	float m_targetFade;
 
 	bool m_running;
 	bool m_notify;
+	bool m_minimized;
+	bool m_fullscreen;
+
 	double m_frameLimit;
 
 	int m_bufferWidth, m_bufferHeight;
@@ -52,8 +74,12 @@ private:
 
 	ThreadMode m_threadMode;
 	RendererMode m_renderMode;
-	std::thread m_audioThread;
-	std::thread m_renderThread;
+	FrameLimitMode m_frameLimitMode;
+
+	GameThread mRenderThread;
+	GameThread mAudioThread;
+	GameThread mLocalThread;
 
 	Text* m_frameText;
+	ResizableImage* m_fadeBox;
 };

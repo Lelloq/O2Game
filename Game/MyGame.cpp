@@ -5,7 +5,7 @@
 #include "../Engine/FontResources.hpp"
 
 #include "./Resources/GameResources.hpp"
-#include "./Resources/Configuration.hpp"
+#include "./../Engine/Configuration.hpp"
 #include "./Data/Util/Util.hpp"
 #include "./Data/MusicDatabase.h"
 #include "EnvironmentSetup.hpp"
@@ -16,6 +16,7 @@
 #include "./Scenes/SongSelectScene.h"
 #include "./Scenes/IntroScene.hpp"
 #include "./Scenes/ResultScene.hpp"
+#include "./Scenes/EditorScene.hpp"
 
 
 MyGame::~MyGame() {
@@ -26,24 +27,45 @@ bool MyGame::Init() {
 	SetRenderMode(RendererMode::DIRECTX);
 	SetBufferSize(800, 600);
 	SetWindowSize(1280, 720);
-
+	
 	{
-		auto value = Configuration::Load("Game", "Window");
-		auto split = splitString(value, 'x');
+		auto value = Configuration::Load("Game", "Renderer");
+		if (value.size()) {
+			try {
+				int index = std::stoi(value.c_str());
 
-		if (split.size() == 2) {
-			SetWindowSize(std::stoi(split[0]), std::stoi(split[1]));
-		}
-		else {
-			MessageBoxA(NULL, "Invalid Game::Window configuration value!", "EstGame Error", MB_ICONERROR);
-			return false;
-		}
-	}
+				switch (index) {
+					case 0:
+						SetRenderMode(RendererMode::OPENGL);
+						break;
 
-	{
-		auto value = Configuration::Load("Game", "Vulkan");
-		if (value == "1") {
-			SetRenderMode(RendererMode::VULKAN);
+					case 1:
+						SetRenderMode(RendererMode::VULKAN);
+						break;
+
+					case 2:
+						SetRenderMode(RendererMode::DIRECTX);
+						break;
+
+					case 3:
+						SetRenderMode(RendererMode::DIRECTX11);
+						break;
+
+					case 4:
+						SetRenderMode(RendererMode::DIRECTX12);
+						break;
+
+					default: {
+						std::cout << "Invalid renderer mode: " << index << std::endl;
+						SetRenderMode(RendererMode::OPENGL);
+						break;
+					}
+				}
+			}
+			catch (std::invalid_argument& e) {
+				std::cout << "Failed to parse Game.ini::Game::Renderer" << std::endl;
+				SetRenderMode(RendererMode::OPENGL);
+			}
 		}
 	}
 
@@ -66,17 +88,31 @@ bool MyGame::Init() {
 		}
 	}
 
+	{
+		auto value = Configuration::Load("Game", "Resolution");
+		auto split = splitString(value, 'x');
+
+		if (split.size() == 2) {
+			SetWindowSize(std::stoi(split[0]), std::stoi(split[1]));
+		}
+		else {
+			MessageBoxA(NULL, "Invalid Game::Resolution configuration value!", "EstGame Error", MB_ICONERROR);
+			return false;
+		}
+	}
+
 	bool result = Game::Init();
 	if (result) {
-		if (!GameNoteResource::Load()) return false;
+		m_window->SetScaleOutput(true);
 
 		SceneManager::AddScene(GameScene::INTRO, new IntroScene());
 		SceneManager::AddScene(GameScene::MAINMENU, new SongSelectScene());
 		SceneManager::AddScene(GameScene::LOADING, new LoadingScene());
 		SceneManager::AddScene(GameScene::RESULT, new ResultScene());
 		SceneManager::AddScene(GameScene::GAME, new GameplayScene());
+		SceneManager::AddScene(GameScene::EDITOR, new EditorScene());
 
-		std::string title = "Unnamed O2 Clone (Beta 3)";
+		std::string title = "Unnamed O2 Clone (Beta 5)";
 		m_window->SetWindowTitle(title);
 
 		if (EnvironmentSetup::GetPath("FILE").empty()) {

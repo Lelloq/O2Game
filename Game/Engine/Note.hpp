@@ -9,9 +9,11 @@ class RhythmEngine;
 class DrawableNote;
 class DrawableTile;
 class AudioSampleChannel;
+class ResizableImage;
 
 enum class NoteState {
 	NORMAL_NOTE,
+	NORMAL_NOTE_PASSED,
 
 	HOLD_PRE,
 	HOLD_MISSED_ACTIVE,
@@ -27,6 +29,8 @@ struct NoteInfoDesc {
 	NoteImageType ImageBodyType;
 
 	int KeysoundIndex;
+	int Volume;
+	int Pan;
 	
 	double StartTime;
 	double EndTime;
@@ -56,6 +60,8 @@ public:
 	double GetHitTime() const;
 
 	int GetKeysoundId() const;
+	int GetKeyVolume() const;
+	int GetKeyPan() const;
 	NoteType GetType() const;
 
 	std::tuple<bool, NoteResult> CheckHit();
@@ -69,6 +75,10 @@ public:
 	bool IsHoldEffectDrawable();
 	bool IsDrawable();
 	bool IsRemoveable();
+	bool IsPassed();
+
+	bool IsHeadHit();
+	bool IsTailHit();
 
 	void Release();
 
@@ -80,8 +90,11 @@ private:
 	GameTrack* m_track;
 
 	DrawableNote* m_head;
-	DrawableTile* m_body;
+	DrawableNote* m_body;
 	DrawableNote* m_tail;
+
+	DrawableNote* m_trail_up;
+	DrawableNote* m_trail_down;
 
 	NoteImageType m_imageType;
 	NoteImageType m_imageBodyType;
@@ -94,6 +107,10 @@ private:
 
 	int m_keysoundIndex;
 	int m_lane;
+
+	int m_keyVolume;
+	int m_keyPan;
+
 	NoteType m_type;
 	NoteState m_state;
 	NoteResult m_hitResult;

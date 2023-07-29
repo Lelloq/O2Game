@@ -1,6 +1,7 @@
 #include "Audio.hpp"
 #include <iostream>
 #include <fstream>
+#include <thread>
 
 #include <bass.h>
 #include <bass_fx.h>
@@ -12,10 +13,18 @@ Audio::Audio(std::string id) {
 
 	m_type = AudioType::STREAM;
 	m_id = id;
+
+	lockFade = new std::mutex();
 }
 
 Audio::~Audio() {
-	Release();
+	{
+		std::lock_guard<std::mutex> lock(*lockFade);
+
+		Release();
+	}
+
+	delete lockFade;
 }
 
 AudioType Audio::GetType() const {
@@ -120,10 +129,6 @@ bool Audio::CreateStream() {
 		return false;
 	}
 
-	// HACK: This is the fastest way to fix delay problem!
-	/*BASS_ChannelPlay(m_hStream, FALSE);
-	BASS_ChannelPause(m_hStream);*/
-
 	return true;
 }
 
@@ -133,6 +138,62 @@ bool Audio::IsPlaying() {
 	}
 
 	return BASS_ChannelIsActive(m_hStream) == BASS_ACTIVE_PLAYING;
+}
+
+bool Audio::IsFadeOut() {
+	return is_fade_rn;
+}
+
+void CreateFadeProc(std::mutex* lock, HSTREAM & m_hstream, int volume, bool state) {
+	std::thread tr = std::thread([lock, m_hstream, volume, state] {
+		if (!lock) {
+			return;
+		}
+
+		std::lock_guard<std::mutex> l(*lock);
+
+		float initialVolume = state ? (float)volume / 100.0f : 0.0f;
+		float targetVolume = state ? 0.0f : (float)volume / 100.0f;
+
+		BASS_ChannelSlideAttribute(m_hstream, BASS_ATTRIB_VOL, targetVolume, 1000);
+
+		auto fadeStartTime = std::chrono::steady_clock::now();
+		auto fadeEndTime = fadeStartTime + std::chrono::milliseconds(1000);
+
+		while (std::chrono::steady_clock::now() < fadeEndTime) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+
+		BASS_ChannelSetAttribute(m_hstream, BASS_ATTRIB_VOL, targetVolume);
+	});
+
+	tr.detach();
+}
+
+bool Audio::FadeIn() {
+	if (!m_hStream) {
+		return false;
+	}
+
+	is_fade_rn = false;
+	CreateFadeProc(lockFade, m_hStream, volume, false);
+
+	return true;
+}
+
+bool Audio::FadeOut() {
+	if (!m_hStream) {
+		return false;
+	}
+
+	is_fade_rn = true;
+	CreateFadeProc(lockFade, m_hStream, volume, true);
+
+	return true;
+}
+
+void Audio::Update() {
+	
 }
 
 bool Audio::Pause() {
@@ -189,7 +250,7 @@ void Audio::SetPan(int _pan) {
 void Audio::SetRate(float _rate) {
 	rate = _rate;
 
-	float frequency = 44100.0f;
+	float frequency = 48000.0f;
 	BASS_ChannelGetAttribute(m_hStream, BASS_ATTRIB_FREQ, &frequency);
 
 	if (pitch) {

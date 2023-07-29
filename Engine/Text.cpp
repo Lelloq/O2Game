@@ -4,38 +4,39 @@
 #include "Imgui/ImguiUtil.hpp"
 #include "FontResources.hpp"
 #include <codecvt>
+#include "MathUtils.hpp"
+#include <sstream>
+#include <iomanip>
 
 Text::Text() {
-    ImGuiContext& g = *ImGui::GetCurrentContext();
-    m_font_ptr = g.Font;
-
     Rotation = 0.0f;
     Transparency = 0.0f;
-    Size = m_font_ptr ? m_font_ptr->FontSize : 13;
+    Size = 13;
     Color3 = { 1.0, 1.0, 1.0 };
     rotation_start_index = 0;
-    m_current_font_size = Size;
     DrawOverEverything = false;
 }
 
-Text::Text(std::string fontName, int sz) : Text() {
-    m_current_font_name = fontName;
-    m_current_font_size = sz;
+Text::Text(int sz) : Text() {
     Size = sz;
+}
 
-    ImFont* font = FontResources::Load(fontName, Size);
-    if (font) {
-        m_font_ptr = font;
+void Text::DrawNumber(double number) { // Add DrawNumber ability to Text
+    // Convert the number to a string with up to 3 digits after the decimal point (BMS Rules)
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(3) << number;
+    std::string numString = stream.str();
+
+    // Remove trailing zero from the decimal part if present
+    size_t dotIndex = numString.find('.');
+    if (dotIndex != std::string::npos) {
+        size_t zeroIndex = numString.find_last_not_of('0');
+        if (zeroIndex != std::string::npos && numString[zeroIndex] == '.')
+            zeroIndex--; // Remove the decimal point as well
+        numString.erase(zeroIndex + 1); // Remove the trailing zero and/or decimal point
     }
-}
 
-void Text::SetFont(ImFont* fontPtr) {
-    m_font_ptr = fontPtr;
-}
-
-void Text::SetFont(std::string fontName) {
-    m_current_font_name = fontName;
-    m_font_ptr = FontResources::Load(fontName, Size);
+    Draw(numString);
 }
 
 void Text::Draw(std::string text) {
@@ -44,16 +45,11 @@ void Text::Draw(std::string text) {
 
 void Text::Draw(std::wstring text) {
     std::wstring_convert<std::codecvt_utf8<wchar_t>> mcov;
-	Draw(mcov.to_bytes(text));
+    Draw(mcov.to_bytes(text));
 }
 
 void Text::Draw(std::u8string text) {
     Size = std::clamp(Size, 5, 36);
-
-    if (m_current_font_size != Size) {
-        m_current_font_size = Size;
-        m_font_ptr = FontResources::Load(m_current_font_name, Size);
-    }
 
     float radians = ((Rotation + 90.0f) * ((22.0f / 7.0f) / 180.0f));
     float red = Color3.R;
@@ -72,23 +68,32 @@ void Text::Draw(std::u8string text) {
     else {
         draw_list = ImGui::GetWindowDrawList();
     }
-	
-    auto textSize = ImGui::CalcTextSizeWithSize((const char*)text.c_str(), Size);
+
+    Window* wnd = Window::GetInstance();
+    float originScale = (wnd->GetBufferWidth() + wnd->GetBufferHeight()) / 15.6f;
+    float targetScale = (wnd->GetWidth() + wnd->GetHeight()) / 15.6f;
+
+    float scale = targetScale / originScale;
+
+    auto textSize = ImGui::CalcTextSizeWithSize((const char*)text.c_str(), Size * scale);
 
     Window* window = Window::GetInstance();
     int wWidth = window->GetWidth();
     int wHeight = window->GetHeight();
 
-    LONG xPos = static_cast<LONG>(wWidth * Position.X.Scale) + static_cast<LONG>(Position.X.Offset);
-    LONG yPos = static_cast<LONG>(wHeight * Position.Y.Scale) + static_cast<LONG>(Position.Y.Offset);
-	
+    float xPos = static_cast<float>((wWidth * Position.X.Scale) + Position.X.Offset);
+    float yPos = static_cast<float>((wHeight * Position.Y.Scale) + Position.Y.Offset);
+
+    xPos *= wnd->GetWidthScale();
+    yPos *= wnd->GetHeightScale();
+
     ImRotationStart();
 
     draw_list->AddText(
-        m_font_ptr, 
-        Size, 
-        ImVec2(xPos, yPos), 
-        ImColor(255 * red, 255 * green, 255 * blue), 
+        NULL,
+        Size * scale,
+        ImVec2(xPos, yPos) - MathUtil::ScaleVec2(0, 2.5),
+        ImColor(255 * red, 255 * green, 255 * blue),
         (const char*)text.c_str()
     );
 
@@ -99,6 +104,18 @@ void Text::Draw(std::u8string text) {
 
 Text::~Text() {
 
+}
+
+int Text::CalculateSize(std::u8string text) {
+    ImguiUtil::NewFrame();
+
+    Window* wnd = Window::GetInstance();
+    float originScale = (wnd->GetBufferWidth() + wnd->GetBufferHeight()) / 15.6f;
+    float targetScale = (wnd->GetWidth() + wnd->GetHeight()) / 15.6f;
+
+    float scale = targetScale / originScale;
+
+    return static_cast<int>(ImGui::CalcTextSizeWithSize((const char*)text.c_str(), Size * scale).x);
 }
 
 void Text::ImRotationStart() {

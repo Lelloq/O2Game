@@ -2,9 +2,14 @@
 #include <string>
 #include <map>
 
-class ImFont;
+struct ImFont;
 
 namespace FontResources {
 	void PreloadFontCaches();
-	ImFont* Load(std::string name, int size);
+	void Rebuild();
+	bool ShouldRebuild();
+	void DoRebuild();
+
+	ImFont* GetButtonFont();
+	ImFont* GetReallyBigFontForSlider();
 };

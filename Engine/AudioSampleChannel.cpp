@@ -1,11 +1,13 @@
+#include <bass.h>
+
 #include "AudioSampleChannel.hpp"
 #include <iostream>
-#include <bass.h>
 
 AudioSampleChannel::AudioSampleChannel() {
 	m_hCurrentSample = NULL;
 	m_rate = 1.0f;
 	m_vol = 1.0f;
+	m_pan = 0.0f;
 	m_pitch = false;
 	m_hasPlayed = false;
 	m_silent = true;
@@ -19,13 +21,22 @@ AudioSampleChannel::AudioSampleChannel(DWORD sampleHandle, float rate, float vol
 
 	m_rate = rate;
 	m_vol = vol;
+	m_pan = 0.0f;
 	m_pitch = pitch;
 	m_hasPlayed = false;
 	m_silent = false;
 }
 
+AudioSampleChannel::~AudioSampleChannel() {
+	Stop();
+}
+
 void AudioSampleChannel::SetVolume(int vol) {
 	m_vol = static_cast<float>(vol);
+}
+
+void AudioSampleChannel::SetPan(int pan) {
+	m_pan = static_cast<float>(pan);
 }
 
 bool AudioSampleChannel::HasPlayed() {
@@ -46,12 +57,16 @@ bool AudioSampleChannel::Play() {
 
 	// Pitch is not possible atm, in sample channel!
 	if (m_rate != 1.0f) {
-		float frequency = 44100.0f;
+		float frequency = 48000.0f;
 		BASS_ChannelGetAttribute(m_hCurrentSample, BASS_ATTRIB_FREQ, &frequency);
 		BASS_ChannelSetAttribute(m_hCurrentSample, BASS_ATTRIB_FREQ, frequency * m_rate);
 	}
 
-	BASS_ChannelSetAttribute(m_hCurrentSample, BASS_ATTRIB_VOL, m_vol / 100.0f);
+	float vol = m_vol / 100.0f;
+	float pan = m_pan / 100.0f;
+
+	BASS_ChannelSetAttribute(m_hCurrentSample, BASS_ATTRIB_VOL, vol);
+	BASS_ChannelSetAttribute(m_hCurrentSample, BASS_ATTRIB_PAN, pan);
 
 	if (!BASS_ChannelPlay(m_hCurrentSample, FALSE)) {
 		return false;
@@ -70,9 +85,8 @@ bool AudioSampleChannel::Stop() {
 		return false;
 	}
 
-	if (!BASS_ChannelStop(m_hCurrentSample)) {
-		return false;
-	}
+	BASS_ChannelStop(m_hCurrentSample);
+	BASS_ChannelFree(m_hCurrentSample);
 
 	return true;
 }

@@ -8,7 +8,7 @@
 #include "AudioSample.hpp"
 #include "Data/bass_ogg_silent.hpp"
 
-#define DEFAULT_SAMPLE_RATE 44100
+constexpr auto DEFAULT_SAMPLE_RATE = 48000;
 
 AudioManager::AudioManager() {
 	m_initialized = false;
@@ -19,12 +19,11 @@ AudioManager::AudioManager() {
 
 AudioManager::~AudioManager() {
 	for (auto& it : m_audios) {
-		if (it.second->GetType() == AudioType::SAMPLE) {
-			delete (AudioSample*)it.second;
-		}
-		else {
-			delete it.second;
-		}
+		delete it.second;
+	}
+
+	for (auto& it : m_audioSamples) {
+		delete it.second;
 	}
 	
 	if (m_initialized) {
@@ -48,14 +47,19 @@ bool AudioManager::Init(Window* window) {
 		return false;
 	}
 
-	if (!BASS_Init(-1, DEFAULT_SAMPLE_RATE, BASS_DEVICE_DEFAULT, m_currentWindow->GetHandle(), NULL)) {
+#if _WIN32
+	if (!BASS_Init(-1, DEFAULT_SAMPLE_RATE, BASS_DEVICE_STEREO, NULL, NULL)) {
 		MessageBoxA(0, "Can't initialize device", 0, MB_ICONERROR);
 		return false;
 	}
+#else
+
+#endif
 
 	//BASS_SetConfig(BASS_CONFIG_UPDATEPERIOD, 0);
 	BASS_SetConfig(BASS_CONFIG_DEV_DEFAULT, TRUE);
 	BASS_SetConfig(BASS_CONFIG_DEV_NONSTOP, TRUE);
+	BASS_SetConfig(BASS_CONFIG_FLOATDSP, TRUE);
 
 	::printf("BASS and BASS_FX initialized\n");
 

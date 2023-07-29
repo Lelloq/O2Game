@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <fstream>
 
-#include "../Resources/Configuration.hpp"
+#include "../../Engine/Configuration.hpp"
 
 #include "../Data/osu.hpp"
 #include "../Data/Chart.hpp"
@@ -12,6 +12,7 @@
 #include "../GameScenes.h"
 #include "../Data/MusicDatabase.h"
 #include "../../Engine/MsgBox.hpp"
+#include "../../Engine/SDLException.hpp"
 
 LoadingScene::LoadingScene() {
 	m_background = nullptr;
@@ -23,7 +24,7 @@ LoadingScene::~LoadingScene() {
 }
 
 void LoadingScene::Update(double delta) {
-	m_counter += delta;
+	if (is_ready) m_counter += delta;
 
 	auto obj = EnvironmentSetup::GetObj("SONG");
 	if (obj == nullptr) {
@@ -37,13 +38,19 @@ void LoadingScene::Update(double delta) {
 			}
 			else {
 				file = EnvironmentSetup::GetPath("FILE");
+
+				auto autoplay = EnvironmentSetup::GetInt("ParameterAutoplay");
+				auto rate = EnvironmentSetup::Get("ParameterRate");
+
+				EnvironmentSetup::SetInt("Autoplay", autoplay);
+				EnvironmentSetup::Set("SongRate", rate);
 			}
 
-			const char* bmsfile[] = { ".bms", ".bme", ".bml" };
+			const char* bmsfile[] = { ".bms", ".bme", ".bml", ".bmsc" };
 			const char* ojnfile = ".ojn";
 
 			Chart* chart = nullptr;
-			if (file.extension() == bmsfile[0] || file.extension() == bmsfile[1] || file.extension() == bmsfile[2]) {
+			if (file.extension() == bmsfile[0] || file.extension() == bmsfile[1] || file.extension() == bmsfile[2] || file.extension() == bmsfile[3]) {
 				BMS::BMSFile beatmap;
 				beatmap.Load(file);
 
@@ -90,15 +97,32 @@ void LoadingScene::Update(double delta) {
 			std::filesystem::path dirPath = chart->m_beatmapDirectory;
 			dirPath /= chart->m_backgroundFile;
 
-			Window* window = Window::GetInstance();
-			if (chart->m_backgroundFile.size() > 0 && std::filesystem::exists(dirPath)) {
-				m_background = new Texture2D(dirPath.string());
-				m_background->Size = UDim2::fromOffset(window->GetBufferWidth(), window->GetBufferHeight());
-			}
+			try {
+				Window* window = Window::GetInstance();
+				if (chart->m_backgroundFile.size() > 0 && std::filesystem::exists(dirPath)) {
+					m_background = new Texture2D(dirPath.string());
+					m_background->Size = UDim2::fromOffset(window->GetBufferWidth(), window->GetBufferHeight());
+				}
 
-			if (chart->m_backgroundBuffer.size() > 0) {
-				m_background = new Texture2D((uint8_t*)chart->m_backgroundBuffer.data(), chart->m_backgroundBuffer.size());
-				m_background->Size = UDim2::fromOffset(window->GetBufferWidth(), window->GetBufferHeight());
+				if (chart->m_backgroundBuffer.size() > 0 && m_background == nullptr) {
+					m_background = new Texture2D((uint8_t*)chart->m_backgroundBuffer.data(), chart->m_backgroundBuffer.size());
+					m_background->Size = UDim2::fromOffset(window->GetBufferWidth(), window->GetBufferHeight());
+				}
+
+				if (m_background == nullptr) {
+					auto SkinName = Configuration::Load("Game", "Skin");
+					auto skinPath = Configuration::Skin_GetPath(SkinName);
+					auto noImage = skinPath / "Playing" / "NoImage.png";
+
+					if (std::filesystem::exists(noImage)) {
+						m_background = new Texture2D(noImage);
+						m_background->Size = UDim2::fromOffset(window->GetBufferWidth(), window->GetBufferHeight());
+					}
+				}
+			}
+			catch (SDLException& e) {
+				MsgBox::Show("FailChart", "Error", "Failed to create texture: " + std::string(e.what()));
+				fucked = true;
 			}
 
 			EnvironmentSetup::SetObj("SONG", chart);
@@ -126,7 +150,7 @@ void LoadingScene::Update(double delta) {
 }
 
 void LoadingScene::Render(double delta) {
-	if (m_background) {
+	if (m_background && is_ready) {
 		m_background->Draw();
 	}
 }
@@ -134,49 +158,18 @@ void LoadingScene::Render(double delta) {
 bool LoadingScene::Attach() {
 	fucked = false;
 	is_shown = false;
+	is_ready = true;
 	m_counter = 0;
 
-	std::string songId = EnvironmentSetup::Get("Key");
-	if (songId.size()) {
-		std::filesystem::path file = Configuration::Load("Music", "Folder");
-		file /= "o2ma" + songId + ".ojn";
+	m_background = (Texture2D*)EnvironmentSetup::GetObj("SongBackground");
+	dont_dispose = m_background != nullptr;
 
-		if (std::filesystem::exists(file)) {
-			DB_MusicItem* item = MusicDatabase::GetInstance()->Find(std::atoi(songId.c_str()));
-			if (!item) {
-				MsgBox::Show("FailChart", "Error", "Failed to find the Id: " + songId, MsgBoxType::OK);
-
-				return true;
-			}
-
-			std::fstream fs(file, std::ios::binary | std::ios::in);
-			if (!fs.is_open()) {
-				std::string msg = "Failed to open file: " + file.string();
-				MsgBox::Show("FailChart", "Error", msg, MsgBoxType::OK);
-
-				return true;
-			}
-
-			fs.seekg(item->CoverOffset, std::ios::beg);
-			char* buffer = new char[item->CoverSize];
-			fs.read(buffer, item->CoverSize);
-			fs.close();
-
-			m_background = new Texture2D((uint8_t*)buffer, item->CoverSize);
-
-			delete[] buffer;
-		}
-		else {
-			MsgBox::Show("FailChart", "Error", "Failed to find note file, please re-regenerate your note database!", MsgBoxType::OK);
-			return true;
-		}
-	}
-
+	EnvironmentSetup::SetObj("SongBackground", nullptr);
 	return true;
 }
 
 bool LoadingScene::Detach() {
-	if (m_background) {
+	if (m_background && !dont_dispose) {
 		delete m_background;
 		m_background = nullptr;
 	}

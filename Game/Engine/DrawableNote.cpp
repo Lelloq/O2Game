@@ -1,19 +1,26 @@
 #include "DrawableNote.hpp"
 #include "../Resources/GameResources.hpp"
+#include "../../Engine/Renderer.hpp"
 
-DrawableNote::DrawableNote(NoteImage* frame) : Texture2D::Texture2D() {
-	m_pTexture = frame->Texture;
-	m_bDisposeTexture = false;
+DrawableNote::DrawableNote(NoteImage* frame) : FrameTimer::FrameTimer() {
+	m_frames = std::vector<Texture2D*>();
+	
+	if (Renderer::GetInstance()->IsVulkan()) {
+		for (auto& frame : frame->VulkanTexture) {
+			m_frames.push_back(new Texture2D(frame));
+		}
+	}
+	else {
+		for (auto& frame : frame->Texture) {
+			m_frames.push_back(new Texture2D(frame));
+		}
+	}
 
-	m_actualSize = frame->TextureRect;
+	AnchorPoint = { 0.0, 1.0 };
 
-	// clean up this later
-	Size.X.Scale = 1.0f;
-	Size.X.Offset = 0;
-	Size.Y.Scale = 1.0f;
-	Size.Y.Offset = 0;
+	for (auto& _frame : m_frames) {
+		_frame->SetOriginalRECT(frame->TextureRect);
+	}
 
-	AnchorPoint = { 0, 1 };
-
-	m_pSpriteBatch = Renderer::GetInstance()->GetSpriteBatch(1);
+	SetFPS(30);
 }

@@ -1,12 +1,15 @@
 #pragma once
-#include <d3d11.h>
 #include <string>
-#include <directxtk/SpriteBatch.h>
+#include <SDL2/SDL.h>
 #include <filesystem>
 
+#include "Data/WindowsTypes.hpp"
+#include "VulkanDriver/Texture2DVulkan.h"
 #include "UDim2.hpp"
 #include "Vector2.hpp"
 #include "Color3.hpp"
+
+struct Texture2D_Vulkan;
 
 class Texture2D {
 public:
@@ -14,19 +17,21 @@ public:
 	Texture2D(std::string fileName);
 	Texture2D(std::filesystem::path path);
 	Texture2D(uint8_t* fileData, size_t size);
-	Texture2D(ID3D11ShaderResourceView* texture);
+	Texture2D(SDL_Texture* texture);
+	Texture2D(Texture2D_Vulkan* texture);
 	~Texture2D();
 
 	void Draw();
 	void Draw(bool manualDraw);
-	void Draw(RECT* clipRect);
-	void Draw(RECT* clipRect, bool manualDraw);
+	void Draw(Rect* clipRect);
+	void Draw(Rect* clipRect, bool manualDraw);
 
 	void CalculateSize();
 
 	float Transparency;
 	float Rotation;
 	bool AlphaBlend;
+	bool m_ready = false;
 
 	UDim2 Size;
 	UDim2 Position;
@@ -37,7 +42,8 @@ public:
 	Vector2 AbsoluteSize;
 	Vector2 AbsolutePosition;
 
-	RECT GetOriginalRECT();
+	Rect GetOriginalRECT();
+	void SetOriginalRECT(Rect size);
 
 	static Texture2D* FromTexture2D(Texture2D* tex);
 
@@ -52,10 +58,14 @@ protected:
 	void LoadImageResources(uint8_t* buffer, size_t size);
 	bool m_bDisposeTexture;
 	
-	RECT m_calculatedSize;
-	RECT m_preAnchoredSize;
+	Rect m_calculatedSize;
+	Rect m_preAnchoredSize;
+	RectF m_calculatedSizeF;
+	RectF m_preAnchoredSizeF;
 
-	RECT m_actualSize;
-	ID3D11ShaderResourceView* m_pTexture;
-	DirectX::SpriteBatch* m_pSpriteBatch = nullptr;
+	Rect m_actualSize;
+	SDL_Texture* m_sdl_tex;
+	SDL_Surface* m_sdl_surface;
+
+	Texture2D_Vulkan* m_vk_tex;
 };
